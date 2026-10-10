@@ -2,7 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 
 project(IntelliHost LANGUAGES CXX)
 
-add_executable(IntelliHost IntelliHost.cpp)
+add_executable(IntelliHost IntelliHost.cpp
+        IntelliHost.cpp)
 target_compile_features(IntelliHost PRIVATE cxx_std_17)
 
 target_compile_options(IntelliHost PRIVATE
