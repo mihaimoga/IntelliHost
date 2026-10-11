@@ -4,9 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#include <algorithm>
 #include <cerrno>
-#include <cctype>
 #include <chrono>
 #include <cstring>
 #include <iostream>
@@ -25,21 +23,84 @@ struct Endpoint {
     std::string port;
 };
 
+struct CommandLine {
+    std::string command;
+    std::string input_file;
+    std::string output_folder;
+    std::string token;
+    std::string machine;
+};
+
 void print_usage(const char* program) {
-    std::cerr << "Usage: " << program
-              << " <download|upload|delete> SOURCE-FILE DESTINATION-FOLDER "
-                 "--token TOKEN --machine HOST:PORT" << std::endl;
+    std::cerr << "Usage:\n"
+              << "  " << program << " --help\n"
+              << "  " << program
+              << " <--download|--upload|--delete> --input-file FILE --output-folder FOLDER"
+                 " --token TOKEN --machine HOST:PORT"
+              << std::endl;
 }
 
 bool is_command(std::string_view command) {
-    return command == "download" || command == "upload" || command == "delete";
+    return command == "--download" || command == "--upload" || command == "--delete";
 }
 
-std::string to_lower(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char character) {
-        return static_cast<char>(std::tolower(character));
-    });
-    return value;
+bool parse_command_line(int argc, char* argv[], CommandLine& command_line, std::string& error) {
+    if (argc < 2) {
+        error = "an action is required";
+        return false;
+    }
+
+    for (int index = 1; index < argc; ++index) {
+        const std::string_view argument(argv[index]);
+        if (is_command(argument)) {
+            if (!command_line.command.empty()) {
+                error = "only one action may be specified";
+                return false;
+            }
+            command_line.command = argument;
+            continue;
+        }
+
+        std::string* destination = nullptr;
+        if (argument == "--input-file") {
+            destination = &command_line.input_file;
+        } else if (argument == "--output-folder") {
+            destination = &command_line.output_folder;
+        } else if (argument == "--token") {
+            destination = &command_line.token;
+        } else if (argument == "--machine") {
+            destination = &command_line.machine;
+        } else {
+            error = "unknown parameter '" + std::string(argument) + "'";
+            return false;
+        }
+
+        if (++index == argc || argv[index][0] == '\0' || std::string_view(argv[index]).starts_with("--")) {
+            error = "parameter '" + std::string(argument) + "' requires a value";
+            return false;
+        }
+        if (!destination->empty()) {
+            error = "parameter '" + std::string(argument) + "' may only be specified once";
+            return false;
+        }
+        *destination = argv[index];
+    }
+
+    if (command_line.command.empty()) {
+        error = "an action is required";
+    } else if (command_line.input_file.empty()) {
+        error = "--input-file is required";
+    } else if (command_line.output_folder.empty()) {
+        error = "--output-folder is required";
+    } else if (command_line.token.empty()) {
+        error = "--token is required";
+    } else if (command_line.machine.empty()) {
+        error = "--machine is required";
+    } else {
+        return true;
+    }
+
+    return false;
 }
 
 bool parse_endpoint(std::string_view value, Endpoint& endpoint) {
@@ -146,31 +207,27 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    if (argc != 8 || std::string_view(argv[4]) != "--token" || std::string_view(argv[6]) != "--machine") {
-        print_usage(argv[0]);
-        return 2;
-    }
-
-    const std::string command = to_lower(argv[1]);
-    if (!is_command(command)) {
-        std::cerr << "error: unsupported command '" << argv[1] << "'" << std::endl;
+    CommandLine command_line;
+    std::string error;
+    if (!parse_command_line(argc, argv, command_line, error)) {
+        std::cerr << "error: " << error << std::endl;
         print_usage(argv[0]);
         return 2;
     }
 
     Endpoint endpoint;
-    if (!parse_endpoint(argv[7], endpoint)) {
+    if (!parse_endpoint(command_line.machine, endpoint)) {
         std::cerr << "error: --machine must be in HOST:PORT form" << std::endl;
         return 2;
     }
 
-    std::string error;
     Socket socket = connect_to_server(endpoint, error);
     if (!socket.valid()) {
         std::cerr << "error: cannot connect to " << endpoint.host << ':' << endpoint.port << ": " << error << std::endl;
         return 1;
     }
 
-    std::cout << "Connected to " << endpoint.host << ':' << endpoint.port << " for " << command << '.' << std::endl;
+    std::cout << "Connected to " << endpoint.host << ':' << endpoint.port << " for " << command_line.command << '.'
+              << std::endl;
     return 0;
 }
