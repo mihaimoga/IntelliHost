@@ -13,9 +13,12 @@ or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 You should have received a copy of the GNU General Public License along with
 IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <string_view>
+
+#include <tinyxml2.h>
 
 namespace {
 
@@ -37,7 +40,9 @@ void print_usage(const char* program) {
               << "  " << program << " --help\n"
               << "  " << program
               << " <--download|--upload|--delete> --input-file FILE --output-folder FOLDER"
-                 " --token TOKEN --machine HOST:PORT"
+                 " [--token TOKEN] [--machine HOST:PORT]\n"
+              << "  TOKEN_ID environment variable is used when --token is not specified.\n"
+              << "  IntelliHost.xml is used when --machine is not specified."
               << std::endl;
 }
 
@@ -87,6 +92,12 @@ bool parse_command_line(int argc, char* argv[], CommandLine& command_line, std::
         *destination = argv[index];
     }
 
+    if (command_line.token.empty()) {
+        if (const char* token = std::getenv("TOKEN_ID"); token != nullptr) {
+            command_line.token = token;
+        }
+    }
+
     if (command_line.command.empty()) {
         error = "an action is required";
     } else if (command_line.input_file.empty()) {
@@ -94,14 +105,35 @@ bool parse_command_line(int argc, char* argv[], CommandLine& command_line, std::
     } else if (command_line.output_folder.empty()) {
         error = "--output-folder is required";
     } else if (command_line.token.empty()) {
-        error = "--token is required";
-    } else if (command_line.machine.empty()) {
-        error = "--machine is required";
-    } else {
-        return true;
+        error = "--token or TOKEN_ID environment variable is required";
     }
 
-    return false;
+    return error.empty();
+}
+
+bool load_machine_from_configuration(CommandLine& command_line, std::string& error) {
+    tinyxml2::XMLDocument document;
+    if (document.LoadFile("IntelliHost.xml") != tinyxml2::XML_SUCCESS) {
+        error = "unable to load IntelliHost.xml: " + std::string(document.ErrorStr());
+        return false;
+    }
+
+    const tinyxml2::XMLElement* root = document.FirstChildElement("IntelliHost");
+    if (root == nullptr) {
+        error = "IntelliHost.xml is missing the IntelliHost element";
+        return false;
+    }
+
+    const tinyxml2::XMLElement* server_ip = root->FirstChildElement("ServerIP");
+    const tinyxml2::XMLElement* server_port = root->FirstChildElement("ServerPort");
+    if (server_ip == nullptr || server_ip->GetText() == nullptr || server_port == nullptr ||
+        server_port->GetText() == nullptr) {
+        error = "IntelliHost.xml must contain non-empty ServerIP and ServerPort elements";
+        return false;
+    }
+
+    command_line.machine = std::string(server_ip->GetText()) + ':' + server_port->GetText();
+    return true;
 }
 
 bool parse_endpoint(std::string_view value, Endpoint& endpoint) {
@@ -135,9 +167,14 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
+    if (command_line.machine.empty() && !load_machine_from_configuration(command_line, error)) {
+        std::cerr << "error: " << error << std::endl;
+        return -1;
+    }
+
     Endpoint endpoint;
     if (!parse_endpoint(command_line.machine, endpoint)) {
-        std::cerr << "error: --machine must be in HOST:PORT form" << std::endl;
+        std::cerr << "error: machine must be in HOST:PORT form" << std::endl;
         return -1;
     }
 
