@@ -38,6 +38,7 @@ struct CommandLine {
 void print_usage(const char* program) {
     std::cerr << "Usage:\n"
               << "  " << program << " --help\n"
+              << "  " << program << " --generate-token\n"
               << "  " << program
               << " <--download|--upload|--delete> --input-file FILE --output-folder FOLDER"
                  " [--token TOKEN] [--machine HOST:PORT]\n"
@@ -46,11 +47,11 @@ void print_usage(const char* program) {
               << std::endl;
 }
 
-bool is_command(std::string_view command) {
-    return command == "--download" || command == "--upload" || command == "--delete";
+bool is_command(const std::string_view command) {
+    return command == "--generate-token" || command == "--download" || command == "--upload" || command == "--delete";
 }
 
-bool parse_command_line(int argc, char* argv[], CommandLine& command_line, std::string& error) {
+bool parse_command_line(const int argc, char* argv[], CommandLine& command_line, std::string& error) {
     if (argc < 2) {
         error = "an action is required";
         return false;
@@ -100,11 +101,11 @@ bool parse_command_line(int argc, char* argv[], CommandLine& command_line, std::
 
     if (command_line.command.empty()) {
         error = "an action is required";
-    } else if (command_line.input_file.empty()) {
+    } else if (command_line.input_file.empty() && (command_line.command != "--generate-token")) {
         error = "--input-file is required";
-    } else if (command_line.output_folder.empty()) {
+    } else if (command_line.output_folder.empty() && (command_line.command != "--generate-token")) {
         error = "--output-folder is required";
-    } else if (command_line.token.empty()) {
+    } else if (command_line.token.empty() && (command_line.command != "--generate-token")) {
         error = "--token or TOKEN_ID environment variable is required";
     }
 
