@@ -16,7 +16,8 @@ if(NOT tinyxml2_FOUND)
     FetchContent_MakeAvailable(tinyxml2)
 endif()
 
-add_executable(IntelliHost IntelliHost.cpp)
+add_executable(IntelliHost IntelliHost.cpp
+        tinyxml2.h)
 target_compile_features(IntelliHost PRIVATE cxx_std_26)
 target_compile_options(IntelliHost PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Wconversion>
