@@ -18,7 +18,8 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 #include <string>
 #include <string_view>
 
-#include <tinyxml2.h>
+#include "tinyxml2.h"
+#include "SocketSTL.h"
 
 namespace {
 

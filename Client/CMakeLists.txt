@@ -5,7 +5,9 @@ project(IntelliHost LANGUAGES CXX)
 add_executable(IntelliHost
         IntelliHost.cpp
         tinyxml2.cpp
-        tinyxml2.h)
+        tinyxml2.h
+        SocketSTL.cpp
+        SocketSTL.h)
 target_include_directories(IntelliHost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(IntelliHost PRIVATE cxx_std_26)
 target_compile_options(IntelliHost PRIVATE
