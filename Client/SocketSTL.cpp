@@ -14,3 +14,15 @@ You should have received a copy of the GNU General Public License along with
 IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 
 #include "SocketSTL.h"
+
+CWSocketException::CWSocketException(int nError) noexcept : m_nError{ nError }
+{
+}
+
+bool CWSocketException::GetErrorMessage(std::string& strError, unsigned int* pnHelpContext) const {
+    if (pnHelpContext != nullptr)
+        *pnHelpContext = 0;
+
+    strError = std::system_category().message(m_nError);
+    return !strError.empty();
+}

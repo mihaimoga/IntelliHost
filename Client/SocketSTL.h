@@ -13,7 +13,24 @@ or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 You should have received a copy of the GNU General Public License along with
 IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 
-#ifndef INTELLIHOST_SOCKETSTL_H
-#define INTELLIHOST_SOCKETSTL_H
+#ifndef SOCKETSTL_H
+#define SOCKETSTL_H
 
-#endif //INTELLIHOST_SOCKETSTL_H
+#include <string>
+#include <exception>
+#include <system_error>
+
+class CWSocketException : public std::exception
+{
+public:
+    // Constructors / Destructors
+    CWSocketException(int nError) noexcept;
+
+    // Methods
+    bool GetErrorMessage(std::string& strError, unsigned int* pnHelpContext = nullptr) const;
+
+    // Data members
+    int m_nError;
+};
+
+#endif // SOCKETSTL_H
