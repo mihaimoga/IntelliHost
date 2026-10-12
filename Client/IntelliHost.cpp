@@ -23,23 +23,23 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 namespace {
 
 struct Endpoint {
-    std::string host;
-    std::string port;
+    std::string strHost;
+    std::string strPort;
 };
 
 struct CommandLine {
-    std::string command;
-    std::string input_file;
-    std::string output_folder;
-    std::string token;
-    std::string machine;
+    std::string strCommand;
+    std::string strInputFile;
+    std::string strOutputFolder;
+    std::string strToken;
+    std::string strMachine;
 };
 
-void print_usage(const char* program) {
+void vPrintUsage(const char* pszProgram) {
     std::cerr << "Usage:\n"
-              << "  " << program << " --help\n"
-              << "  " << program << " --generate-token\n"
-              << "  " << program
+              << "  " << pszProgram << " --help\n"
+              << "  " << pszProgram << " --generate-token\n"
+              << "  " << pszProgram
               << " <--download|--upload|--delete> --input-file FILE --output-folder FOLDER"
                  " [--token TOKEN] [--machine HOST:PORT]\n"
               << "  TOKEN_ID environment variable is used when --token is not specified.\n"
@@ -47,134 +47,135 @@ void print_usage(const char* program) {
               << std::endl;
 }
 
-bool is_command(const std::string_view command) {
-    return command == "--generate-token" || command == "--download" || command == "--upload" || command == "--delete";
+bool bIsCommand(const std::string_view strCommand) {
+    return strCommand == "--generate-token" || strCommand == "--download" || strCommand == "--upload" ||
+           strCommand == "--delete";
 }
 
-bool parse_command_line(const int argc, char* argv[], CommandLine& command_line, std::string& error) {
-    if (argc < 2) {
-        error = "an action is required";
+bool bParseCommandLine(const int nArgc, char* ppszArgv[], CommandLine& cmdLine, std::string& strError) {
+    if (nArgc < 2) {
+        strError = "an action is required";
         return false;
     }
 
-    for (int index = 1; index < argc; ++index) {
-        const std::string_view argument(argv[index]);
-        if (is_command(argument)) {
-            if (!command_line.command.empty()) {
-                error = "only one action may be specified";
+    for (int nIndex = 1; nIndex < nArgc; ++nIndex) {
+        const std::string_view strArgument(ppszArgv[nIndex]);
+        if (bIsCommand(strArgument)) {
+            if (!cmdLine.strCommand.empty()) {
+                strError = "only one action may be specified";
                 return false;
             }
-            command_line.command = argument;
+            cmdLine.strCommand = strArgument;
             continue;
         }
 
-        std::string* destination = nullptr;
-        if (argument == "--input-file") {
-            destination = &command_line.input_file;
-        } else if (argument == "--output-folder") {
-            destination = &command_line.output_folder;
-        } else if (argument == "--token") {
-            destination = &command_line.token;
-        } else if (argument == "--machine") {
-            destination = &command_line.machine;
+        std::string* pstrDestination = nullptr;
+        if (strArgument == "--input-file") {
+            pstrDestination = &cmdLine.strInputFile;
+        } else if (strArgument == "--output-folder") {
+            pstrDestination = &cmdLine.strOutputFolder;
+        } else if (strArgument == "--token") {
+            pstrDestination = &cmdLine.strToken;
+        } else if (strArgument == "--machine") {
+            pstrDestination = &cmdLine.strMachine;
         } else {
-            error = "unknown parameter '" + std::string(argument) + "'";
+            strError = "unknown parameter '" + std::string(strArgument) + "'";
             return false;
         }
 
-        if (++index == argc || argv[index][0] == '\0' || std::string_view(argv[index]).starts_with("--")) {
-            error = "parameter '" + std::string(argument) + "' requires a value";
+        if (++nIndex == nArgc || ppszArgv[nIndex][0] == '\0' || std::string_view(ppszArgv[nIndex]).starts_with("--")) {
+            strError = "parameter '" + std::string(strArgument) + "' requires a value";
             return false;
         }
-        if (!destination->empty()) {
-            error = "parameter '" + std::string(argument) + "' may only be specified once";
+        if (!pstrDestination->empty()) {
+            strError = "parameter '" + std::string(strArgument) + "' may only be specified once";
             return false;
         }
-        *destination = argv[index];
+        *pstrDestination = ppszArgv[nIndex];
     }
 
-    if (command_line.token.empty()) {
-        if (const char* token = std::getenv("TOKEN_ID"); token != nullptr) {
-            command_line.token = token;
+    if (cmdLine.strToken.empty()) {
+        if (const char* pszToken = std::getenv("TOKEN_ID"); pszToken != nullptr) {
+            cmdLine.strToken = pszToken;
         }
     }
 
-    if (command_line.command.empty()) {
-        error = "an action is required";
-    } else if (command_line.input_file.empty() && (command_line.command != "--generate-token")) {
-        error = "--input-file is required";
-    } else if (command_line.output_folder.empty() && (command_line.command != "--generate-token")) {
-        error = "--output-folder is required";
-    } else if (command_line.token.empty() && (command_line.command != "--generate-token")) {
-        error = "--token or TOKEN_ID environment variable is required";
+    if (cmdLine.strCommand.empty()) {
+        strError = "an action is required";
+    } else if (cmdLine.strInputFile.empty() && (cmdLine.strCommand != "--generate-token")) {
+        strError = "--input-file is required";
+    } else if (cmdLine.strOutputFolder.empty() && (cmdLine.strCommand != "--generate-token")) {
+        strError = "--output-folder is required";
+    } else if (cmdLine.strToken.empty() && (cmdLine.strCommand != "--generate-token")) {
+        strError = "--token or TOKEN_ID environment variable is required";
     }
 
-    return error.empty();
+    return strError.empty();
 }
 
-bool load_machine_from_configuration(CommandLine& command_line, std::string& error) {
-    tinyxml2::XMLDocument document;
-    if (document.LoadFile("IntelliHost.xml") != tinyxml2::XML_SUCCESS) {
-        error = "unable to load IntelliHost.xml: " + std::string(document.ErrorStr());
+bool bLoadMachineFromConfiguration(CommandLine& cmdLine, std::string& strError) {
+    tinyxml2::XMLDocument xmlDocument;
+    if (xmlDocument.LoadFile("IntelliHost.xml") != tinyxml2::XML_SUCCESS) {
+        strError = "unable to load IntelliHost.xml: " + std::string(xmlDocument.ErrorStr());
         return false;
     }
 
-    const tinyxml2::XMLElement* root = document.FirstChildElement("IntelliHost");
-    if (root == nullptr) {
-        error = "IntelliHost.xml is missing the IntelliHost element";
+    const tinyxml2::XMLElement* pXmlRoot = xmlDocument.FirstChildElement("IntelliHost");
+    if (pXmlRoot == nullptr) {
+        strError = "IntelliHost.xml is missing the IntelliHost element";
         return false;
     }
 
-    const tinyxml2::XMLElement* server_ip = root->FirstChildElement("ServerIP");
-    const tinyxml2::XMLElement* server_port = root->FirstChildElement("ServerPort");
-    if (server_ip == nullptr || server_ip->GetText() == nullptr || server_port == nullptr ||
-        server_port->GetText() == nullptr) {
-        error = "IntelliHost.xml must contain non-empty ServerIP and ServerPort elements";
+    const tinyxml2::XMLElement* pXmlServerIp = pXmlRoot->FirstChildElement("ServerIP");
+    const tinyxml2::XMLElement* pXmlServerPort = pXmlRoot->FirstChildElement("ServerPort");
+    if (pXmlServerIp == nullptr || pXmlServerIp->GetText() == nullptr || pXmlServerPort == nullptr ||
+        pXmlServerPort->GetText() == nullptr) {
+        strError = "IntelliHost.xml must contain non-empty ServerIP and ServerPort elements";
         return false;
     }
 
-    command_line.machine = std::string(server_ip->GetText()) + ':' + server_port->GetText();
+    cmdLine.strMachine = std::string(pXmlServerIp->GetText()) + ':' + pXmlServerPort->GetText();
     return true;
 }
 
-bool parse_endpoint(std::string_view value, Endpoint& endpoint) {
-    if (value.empty()) {
+bool bParseEndpoint(std::string_view strValue, Endpoint& endpointParsed) {
+    if (strValue.empty()) {
         return false;
     }
 
-    const auto separator = value.rfind(':');
-    if (separator == std::string_view::npos || separator == 0 || separator == value.size() - 1) {
+    const auto nSeparator = strValue.rfind(':');
+    if (nSeparator == std::string_view::npos || nSeparator == 0 || nSeparator == strValue.size() - 1) {
         return false;
     }
 
-    endpoint.host = value.substr(0, separator);
-    endpoint.port = value.substr(separator + 1);
-    return endpoint.port.find_first_not_of("0123456789") == std::string::npos;
+    endpointParsed.strHost = strValue.substr(0, nSeparator);
+    endpointParsed.strPort = strValue.substr(nSeparator + 1);
+    return endpointParsed.strPort.find_first_not_of("0123456789") == std::string::npos;
 }
 
 }  // namespace
 
-int main(int argc, char* argv[]) {
+int main(const int argc, char* argv[]) {
     if (argc == 2 && std::string_view(argv[1]) == "--help") {
-        print_usage(argv[0]);
+        vPrintUsage(argv[0]);
         return 0;
     }
 
-    CommandLine command_line;
-    std::string error;
-    if (!parse_command_line(argc, argv, command_line, error)) {
-        std::cerr << "error: " << error << std::endl;
-        print_usage(argv[0]);
+    CommandLine cmdLine;
+    std::string strError;
+    if (!bParseCommandLine(argc, argv, cmdLine, strError)) {
+        std::cerr << "error: " << strError << std::endl;
+        vPrintUsage(argv[0]);
         return -1;
     }
 
-    if (command_line.machine.empty() && !load_machine_from_configuration(command_line, error)) {
-        std::cerr << "error: " << error << std::endl;
+    if (cmdLine.strMachine.empty() && !bLoadMachineFromConfiguration(cmdLine, strError)) {
+        std::cerr << "error: " << strError << std::endl;
         return -1;
     }
 
-    Endpoint endpoint;
-    if (!parse_endpoint(command_line.machine, endpoint)) {
+    Endpoint endpointMachine;
+    if (!bParseEndpoint(cmdLine.strMachine, endpointMachine)) {
         std::cerr << "error: machine must be in HOST:PORT form" << std::endl;
         return -1;
     }
