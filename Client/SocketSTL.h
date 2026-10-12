@@ -20,11 +20,11 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 #include <exception>
 #include <system_error>
 
-class CWSocketException : public std::exception
+class CSocketException : public std::exception
 {
 public:
     // Constructors / Destructors
-    CWSocketException(int nError) noexcept;
+    CSocketException(int nError) noexcept;
 
     // Methods
     bool GetErrorMessage(std::string& strError, unsigned int* pnHelpContext = nullptr) const;

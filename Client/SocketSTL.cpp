@@ -15,14 +15,66 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 
 #include "SocketSTL.h"
 
-CWSocketException::CWSocketException(int nError) noexcept : m_nError{ nError }
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <cstring>
+#endif
+
+CSocketException::CSocketException(int nError) noexcept : m_nError{ nError }
 {
 }
 
-bool CWSocketException::GetErrorMessage(std::string& strError, unsigned int* pnHelpContext) const {
+bool CSocketException::GetErrorMessage(std::string& strError, unsigned int* pnHelpContext) const
+{
     if (pnHelpContext != nullptr)
         *pnHelpContext = 0;
 
-    strError = std::system_category().message(m_nError);
+#if defined(_WIN32)
+    LPSTR pMessageBuffer = nullptr;
+    const DWORD nLength = ::FormatMessageA(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        nullptr,
+        static_cast<DWORD>(m_nError),
+        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        reinterpret_cast<LPSTR>(&pMessageBuffer),
+        0,
+        nullptr);
+
+    if (nLength == 0 || pMessageBuffer == nullptr) {
+        strError.clear();
+        return false;
+    }
+
+    strError.assign(pMessageBuffer, nLength);
+    ::LocalFree(pMessageBuffer);
+
+    while (!strError.empty() && (strError.back() == '\r' || strError.back() == '\n'))
+        strError.pop_back();
+
+    return true;
+#elif defined(__linux__)
+    char szMessage[256]{};
+
+#if defined(__GLIBC__) && defined(_GNU_SOURCE)
+    const char* pszMessage = ::strerror_r(m_nError, szMessage, sizeof(szMessage));
+    if (pszMessage == nullptr) {
+        strError.clear();
+        return false;
+    }
+
+    strError = pszMessage;
+#else
+    if (::strerror_r(m_nError, szMessage, sizeof(szMessage)) != 0) {
+        strError.clear();
+        return false;
+    }
+
+    strError = szMessage;
+#endif
+
     return !strError.empty();
+#else
+#error "CSocketException::GetErrorMessage is supported only on Windows and Linux."
+#endif
 }
