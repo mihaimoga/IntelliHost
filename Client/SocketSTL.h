@@ -33,4 +33,35 @@ public:
     int m_nError;
 };
 
+#ifndef SOCKET
+typedef int SOCKET;
+#endif
+
+class CSocketSTL
+{
+public:
+    // Constructors / Destructors
+    CSocketSTL() noexcept;
+    CSocketSTL(const CSocketSTL&) = delete;
+    CSocketSTL(CSocketSTL&&) = delete;
+    virtual ~CSocketSTL() noexcept;
+    void Close() noexcept;
+
+    // Typedefs
+#ifdef _UNICODE
+    using String = std::wstring;
+#else
+    using String = std::string;
+#endif //#ifdef _UNICODE
+
+#ifndef INVALID_SOCKET
+    const int INVALID_SOCKET = -1;
+#endif
+
+protected:
+    // Member variables
+    SOCKET m_hSocket;
+    String m_sBindAddress;
+};
+
 #endif // SOCKETSTL_H

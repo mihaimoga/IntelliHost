@@ -15,8 +15,11 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 
 #include "SocketSTL.h"
 
+#include <unistd.h>
+
 #if defined(_WIN32)
 #include <windows.h>
+#include <winsock.h>
 #else
 #include <cstring>
 #endif
@@ -77,4 +80,27 @@ bool CSocketException::GetErrorMessage(std::string& strError, unsigned int* pnHe
 #else
 #error "CSocketException::GetErrorMessage is supported only on Windows and Linux."
 #endif
+}
+
+CSocketSTL::CSocketSTL() noexcept : m_hSocket{ INVALID_SOCKET }
+{
+}
+
+CSocketSTL::~CSocketSTL() noexcept
+{
+    if (m_hSocket != INVALID_SOCKET)
+        Close();
+}
+
+void CSocketSTL::Close() noexcept
+{
+    if (m_hSocket != INVALID_SOCKET)
+    {
+#if defined(_WIN32)
+        closesocket(m_hSocket);
+#else
+        close(m_hSocket);
+#endif
+        m_hSocket = INVALID_SOCKET;
+    }
 }
