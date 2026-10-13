@@ -16,12 +16,50 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 #include "SocketSTL.h"
 
 #if defined(_WIN32)
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
-#include <winsock.h>
 #else
 #include <cstring>
 #include <unistd.h>
+#include <cerrno>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #endif
+
+namespace
+{
+#if defined(_WIN32)
+	using SockLen = int;
+	int LastSocketError() noexcept { return ::WSAGetLastError(); }
+#else
+	using SockLen = socklen_t;
+	int LastSocketError() noexcept { return errno; }
+#endif
+
+	void FormatAddress(const sockaddr_storage& sockAddr, std::string& sAddress, UINT& nPort)
+	{
+		char szAddress[INET6_ADDRSTRLEN]{};
+		if (sockAddr.ss_family == AF_INET)
+		{
+			const auto* pAddr = reinterpret_cast<const sockaddr_in*>(&sockAddr);
+			if (inet_ntop(AF_INET, &pAddr->sin_addr, szAddress, sizeof(szAddress)) == nullptr)
+				throw CSocketException(LastSocketError());
+			nPort = ntohs(pAddr->sin_port);
+		}
+		else if (sockAddr.ss_family == AF_INET6)
+		{
+			const auto* pAddr = reinterpret_cast<const sockaddr_in6*>(&sockAddr);
+			if (inet_ntop(AF_INET6, &pAddr->sin6_addr, szAddress, sizeof(szAddress)) == nullptr)
+				throw CSocketException(LastSocketError());
+			nPort = ntohs(pAddr->sin6_port);
+		}
+		else
+			throw CSocketException(AF_UNSPEC);
+		sAddress = szAddress;
+	}
+}
 
 CSocketException::CSocketException(int nError) noexcept : m_nError{ nError }
 {
@@ -102,4 +140,68 @@ void CSocketSTL::Close() noexcept
 #endif
         m_hSocket = INVALID_SOCKET;
     }
+}
+
+void CSocketSTL::Attach(SOCKET hSocket) noexcept
+{
+    if (m_hSocket != INVALID_SOCKET)
+        Close();
+    m_hSocket = hSocket;
+}
+
+SOCKET CSocketSTL::Detach() noexcept
+{
+    const SOCKET socket{ m_hSocket };
+    m_hSocket = INVALID_SOCKET;
+    return socket;
+}
+
+void CSocketSTL::GetPeerName(String& sPeerAddress, UINT& nPeerPort, int /*nAddressToStringFlags*/)
+{
+	sockaddr_storage sockAddr{};
+	int nSockAddrLen{ static_cast<int>(sizeof(sockAddr)) };
+	GetPeerName(reinterpret_cast<SOCKADDR*>(&sockAddr), &nSockAddrLen);
+	std::string sAddress;
+	FormatAddress(sockAddr, sAddress, nPeerPort);
+	sPeerAddress.assign(sAddress.begin(), sAddress.end());
+}
+
+void CSocketSTL::GetSockName(String& sSocketAddress, UINT& nSocketPort, int /*nAddressToStringFlags*/)
+{
+	sockaddr_storage sockAddr{};
+	int nSockAddrLen{ static_cast<int>(sizeof(sockAddr)) };
+	GetSockName(reinterpret_cast<SOCKADDR*>(&sockAddr), &nSockAddrLen);
+	std::string sAddress;
+	FormatAddress(sockAddr, sAddress, nSocketPort);
+	sSocketAddress.assign(sAddress.begin(), sAddress.end());
+}
+
+void CSocketSTL::GetPeerName(SOCKADDR* pSockAddr, int* pSockAddrLen)
+{
+	SockLen nLen{ static_cast<SockLen>(*pSockAddrLen) };
+	if (getpeername(m_hSocket, pSockAddr, &nLen) != 0)
+		throw CSocketException(LastSocketError());
+	*pSockAddrLen = static_cast<int>(nLen);
+}
+
+void CSocketSTL::GetSockName(SOCKADDR* pSockAddr, int* pSockAddrLen)
+{
+	SockLen nLen{ static_cast<SockLen>(*pSockAddrLen) };
+	if (getsockname(m_hSocket, pSockAddr, &nLen) != 0)
+		throw CSocketException(LastSocketError());
+	*pSockAddrLen = static_cast<int>(nLen);
+}
+
+void CSocketSTL::SetSockOpt(int nOptionName, const void* pOptionValue, int nOptionLen, int nLevel)
+{
+	if (setsockopt(m_hSocket, nLevel, nOptionName, static_cast<const char*>(pOptionValue), static_cast<SockLen>(nOptionLen)) != 0)
+		throw CSocketException(LastSocketError());
+}
+
+void CSocketSTL::GetSockOpt(int nOptionName, void* pOptionValue, int* pOptionLen, int nLevel)
+{
+	SockLen nLen{ static_cast<SockLen>(*pOptionLen) };
+	if (getsockopt(m_hSocket, nLevel, nOptionName, static_cast<char*>(pOptionValue), &nLen) != 0)
+		throw CSocketException(LastSocketError());
+	*pOptionLen = static_cast<int>(nLen);
 }
