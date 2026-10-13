@@ -15,13 +15,12 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 
 #include "SocketSTL.h"
 
-#include <unistd.h>
-
 #if defined(_WIN32)
 #include <windows.h>
 #include <winsock.h>
 #else
 #include <cstring>
+#include <unistd.h>
 #endif
 
 CSocketException::CSocketException(int nError) noexcept : m_nError{ nError }
