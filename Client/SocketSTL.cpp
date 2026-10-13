@@ -15,6 +15,8 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 
 #include "SocketSTL.h"
 
+#include <climits>
+
 #if defined(_WIN32)
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -26,6 +28,7 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <poll.h>
 #endif
 
 namespace
@@ -58,6 +61,43 @@ namespace
 		else
 			throw CSocketException(AF_UNSPEC);
 		sAddress = szAddress;
+	}
+
+	// Waits up to dwTimeout ms for the requested event; error/hang-up also count as ready
+	// so that the following recv/send reports the actual condition.
+	bool PollSocket(SOCKET hSocket, short nEvents, DWORD dwTimeout)
+	{
+		const int nTimeout{ dwTimeout > static_cast<DWORD>(INT_MAX) ? INT_MAX : static_cast<int>(dwTimeout) };
+#if defined(_WIN32)
+		WSAPOLLFD pfd{};
+		pfd.fd = hSocket;
+		pfd.events = nEvents;
+		const int nStatus{ ::WSAPoll(&pfd, 1, nTimeout) };
+		if (nStatus == SOCKET_ERROR)
+			throw CSocketException(LastSocketError());
+#else
+		pollfd pfd{};
+		pfd.fd = hSocket;
+		pfd.events = nEvents;
+		int nStatus{};
+		do
+		{
+			nStatus = ::poll(&pfd, 1, nTimeout);
+		} while (nStatus < 0 && errno == EINTR);
+		if (nStatus < 0)
+			throw CSocketException(LastSocketError());
+#endif
+		if (nStatus == 0)
+			return false;
+		if ((pfd.revents & POLLNVAL) != 0)
+			throw CSocketException(
+#if defined(_WIN32)
+				WSAENOTSOCK
+#else
+				EBADF
+#endif
+			);
+		return true;
 	}
 }
 
@@ -204,4 +244,19 @@ void CSocketSTL::GetSockOpt(int nOptionName, void* pOptionValue, int* pOptionLen
 	if (getsockopt(m_hSocket, nLevel, nOptionName, static_cast<char*>(pOptionValue), &nLen) != 0)
 		throw CSocketException(LastSocketError());
 	*pOptionLen = static_cast<int>(nLen);
+}
+
+bool CSocketSTL::IsCreated() const noexcept
+{
+	return (m_hSocket != INVALID_SOCKET);
+}
+
+bool CSocketSTL::IsReadible(DWORD dwTimeout) const
+{
+	return PollSocket(m_hSocket, POLLIN, dwTimeout);
+}
+
+bool CSocketSTL::IsWritable(DWORD dwTimeout) const
+{
+	return PollSocket(m_hSocket, POLLOUT, dwTimeout);
 }

@@ -45,6 +45,10 @@ typedef struct sockaddr SOCKADDR;
 typedef unsigned int UINT;
 #endif
 
+#ifndef DWORD
+typedef unsigned long DWORD;
+#endif
+
 class CSocketSTL
 {
 public:
@@ -75,11 +79,11 @@ public:
     void GetSockName(SOCKADDR* pSockAddr, int* pSockAddrLen) const;
     void SetSockOpt(int nOptionName, const void* pOptionValue, int nOptionLen, int nLevel) const;
     void GetSockOpt(int nOptionName, void* pOptionValue, int* pOptionLen, int nLevel) const;
-/*    _NODISCARD bool IsCreated() const noexcept;
-    _NODISCARD bool IsReadible(_In_ DWORD dwTimeout);
-    _NODISCARD bool IsWritable(_In_ DWORD dwTimeout);
-    void SetBindAddress(_In_ const String& sBindAddress) { m_sBindAddress = sBindAddress; };
-    _NODISCARD String GetBindAddress() const { return m_sBindAddress; };*/
+    [[nodiscard]] bool IsCreated() const noexcept;
+    [[nodiscard]] bool IsReadible(DWORD dwTimeout) const;
+    [[nodiscard]] bool IsWritable(DWORD dwTimeout) const;
+    void SetBindAddress(const String& sBindAddress) { m_sBindAddress = sBindAddress; };
+    [[nodiscard]] String GetBindAddress() const { return m_sBindAddress; };
 
 protected:
     // Member variables
