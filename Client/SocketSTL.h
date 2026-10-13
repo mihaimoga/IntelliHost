@@ -69,12 +69,12 @@ public:
     //Attributes
     void Attach(SOCKET hSocket) noexcept;
     SOCKET Detach() noexcept;
-    void GetPeerName(String& sPeerAddress, UINT& nPeerPort, int nAddressToStringFlags = 0);
-    void GetPeerName(SOCKADDR* pSockaddr, int* pSockAddrLen);
-    void GetSockName(String& sSocketAddress, UINT& nSocketPort, int nAddressToStringFlags = 0);
-    void GetSockName(SOCKADDR* pSockAddr, int* pSockAddrLen);
-    void SetSockOpt(int nOptionName, const void* pOptionValue, int nOptionLen, int nLevel);
-    void GetSockOpt(int nOptionName, void* pOptionValue, int* pOptionLen, int nLevel);
+    void GetPeerName(String& sPeerAddress, UINT& nPeerPort, int nAddressToStringFlags = 0) const;
+    void GetPeerName(SOCKADDR* pSockaddr, int* pSockAddrLen) const;
+    void GetSockName(String& sSocketAddress, UINT& nSocketPort, int nAddressToStringFlags = 0) const;
+    void GetSockName(SOCKADDR* pSockAddr, int* pSockAddrLen) const;
+    void SetSockOpt(int nOptionName, const void* pOptionValue, int nOptionLen, int nLevel) const;
+    void GetSockOpt(int nOptionName, void* pOptionValue, int* pOptionLen, int nLevel) const;
 /*    _NODISCARD bool IsCreated() const noexcept;
     _NODISCARD bool IsReadible(_In_ DWORD dwTimeout);
     _NODISCARD bool IsWritable(_In_ DWORD dwTimeout);

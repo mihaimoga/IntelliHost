@@ -156,7 +156,7 @@ SOCKET CSocketSTL::Detach() noexcept
     return socket;
 }
 
-void CSocketSTL::GetPeerName(String& sPeerAddress, UINT& nPeerPort, int /*nAddressToStringFlags*/)
+void CSocketSTL::GetPeerName(String& sPeerAddress, UINT& nPeerPort, int /*nAddressToStringFlags*/) const
 {
 	sockaddr_storage sockAddr{};
 	int nSockAddrLen{ static_cast<int>(sizeof(sockAddr)) };
@@ -166,7 +166,7 @@ void CSocketSTL::GetPeerName(String& sPeerAddress, UINT& nPeerPort, int /*nAddre
 	sPeerAddress.assign(sAddress.begin(), sAddress.end());
 }
 
-void CSocketSTL::GetSockName(String& sSocketAddress, UINT& nSocketPort, int /*nAddressToStringFlags*/)
+void CSocketSTL::GetSockName(String& sSocketAddress, UINT& nSocketPort, int /*nAddressToStringFlags*/) const
 {
 	sockaddr_storage sockAddr{};
 	int nSockAddrLen{ static_cast<int>(sizeof(sockAddr)) };
@@ -176,7 +176,7 @@ void CSocketSTL::GetSockName(String& sSocketAddress, UINT& nSocketPort, int /*nA
 	sSocketAddress.assign(sAddress.begin(), sAddress.end());
 }
 
-void CSocketSTL::GetPeerName(SOCKADDR* pSockAddr, int* pSockAddrLen)
+void CSocketSTL::GetPeerName(SOCKADDR* pSockAddr, int* pSockAddrLen) const
 {
 	SockLen nLen{ static_cast<SockLen>(*pSockAddrLen) };
 	if (getpeername(m_hSocket, pSockAddr, &nLen) != 0)
@@ -184,7 +184,7 @@ void CSocketSTL::GetPeerName(SOCKADDR* pSockAddr, int* pSockAddrLen)
 	*pSockAddrLen = static_cast<int>(nLen);
 }
 
-void CSocketSTL::GetSockName(SOCKADDR* pSockAddr, int* pSockAddrLen)
+void CSocketSTL::GetSockName(SOCKADDR* pSockAddr, int* pSockAddrLen) const
 {
 	SockLen nLen{ static_cast<SockLen>(*pSockAddrLen) };
 	if (getsockname(m_hSocket, pSockAddr, &nLen) != 0)
@@ -192,13 +192,13 @@ void CSocketSTL::GetSockName(SOCKADDR* pSockAddr, int* pSockAddrLen)
 	*pSockAddrLen = static_cast<int>(nLen);
 }
 
-void CSocketSTL::SetSockOpt(int nOptionName, const void* pOptionValue, int nOptionLen, int nLevel)
+void CSocketSTL::SetSockOpt(int nOptionName, const void* pOptionValue, int nOptionLen, int nLevel) const
 {
 	if (setsockopt(m_hSocket, nLevel, nOptionName, static_cast<const char*>(pOptionValue), static_cast<SockLen>(nOptionLen)) != 0)
 		throw CSocketException(LastSocketError());
 }
 
-void CSocketSTL::GetSockOpt(int nOptionName, void* pOptionValue, int* pOptionLen, int nLevel)
+void CSocketSTL::GetSockOpt(int nOptionName, void* pOptionValue, int* pOptionLen, int nLevel) const
 {
 	SockLen nLen{ static_cast<SockLen>(*pOptionLen) };
 	if (getsockopt(m_hSocket, nLevel, nOptionName, static_cast<char*>(pOptionValue), &nLen) != 0)
