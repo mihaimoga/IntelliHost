@@ -49,3 +49,13 @@ if(WIN32)
 endif()
 
 add_test(NAME IntelliTest COMMAND IntelliTest)
+
+# Build and run the unit tests first; a failing test aborts the IntelliHost build
+add_custom_target(RunIntelliTest
+    COMMAND IntelliTest
+    DEPENDS IntelliTest
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    COMMENT "Running IntelliTest unit tests"
+    VERBATIM
+)
+add_dependencies(IntelliHost RunIntelliTest)
