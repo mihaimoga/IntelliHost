@@ -98,20 +98,20 @@ public:
     void Accept(CSocketSTL& connectedSocket, SOCKADDR* pSockAddr = nullptr, int* pSockAddrLen = nullptr) const;
 	void CreateAndBind(UINT nSocketPort, int nSocketType, int nDefaultAddressFormat);
 	void Bind(const SOCKADDR* pSockAddr, int nSockAddrLen) const;
-/*	void CreateAndConnect(_In_z_ LPCTSTR pszHostAddress, _In_ UINT nHostPort, _In_ int nSocketType = SOCK_STREAM, _In_ int nFamily = AF_UNSPEC, _In_ int nProtocolType = 0);
+	void IOCtl(long lCommand, DWORD* pArgument);
+	void Listen(int nConnectionBacklog) const;
+	void ShutDown(int nHow) const;
+	/*	void CreateAndConnect(_In_z_ LPCTSTR pszHostAddress, _In_ UINT nHostPort, _In_ int nSocketType = SOCK_STREAM, _In_ int nFamily = AF_UNSPEC, _In_ int nProtocolType = 0);
 	void CreateAndConnect(_In_z_ LPCTSTR pszHostAddress, _In_z_ LPCTSTR pszPortOrServiceName, _In_ int nSocketType = SOCK_STREAM, _In_ int nFamily = AF_UNSPEC, _In_ int nProtocolType = 0);
 	void Connect(_In_reads_bytes_(nSockAddrLen) const SOCKADDR* pSockAddr, _In_ int nSockAddrLen, _In_ DWORD dwTimeout, _In_ bool bResetToBlockingMode = true);
 	void CreateAndConnect(_In_z_ LPCTSTR pszHostAddress, _In_ UINT nHostPort, _In_ DWORD dwTimeout, _In_ bool bResetToBlockingMode, _In_ int nSocketType = SOCK_STREAM);
 	void CreateAndConnect(_In_z_ LPCTSTR pszHostAddress, _In_z_ LPCTSTR pszPortOrServiceName, _In_ DWORD dwTimeout, _In_ bool bResetToBlockingMode, _In_ int nSocketType = SOCK_STREAM);
-	void IOCtl(_In_ long lCommand, _Inout_ DWORD* pArgument);
-	void Listen(_In_ int nConnectionBacklog = SOMAXCONN);
 	int Receive(_Out_writes_bytes_to_(nBufLen, return) __out_data_source(NETWORK) void* pBuf, _In_ int nBufLen, _In_ int nFlags = 0);
 	int ReceiveFrom(_Out_writes_bytes_to_(nBufLen, return) __out_data_source(NETWORK) void* pBuf, _In_ int nBufLen, _Out_writes_bytes_to_opt_(*pSockAddrLen, *pSockAddrLen) SOCKADDR* pSockAddr, _Inout_opt_ int* pSockAddrLen, _In_ int nFlags = 0);
 	int ReceiveFrom(_Out_writes_bytes_to_(nBufLen, return) __out_data_source(NETWORK) void* pBuf, _In_ int nBufLen, _Inout_ String& sSocketAddress, _Out_ UINT& nSocketPort, _In_ int nReceiveFromFlags = 0, _In_ int nAddressToStringFlags = 0);
 	int Send(_In_reads_bytes_(nBufLen) const void* pBuffer, _In_ int nBufLen, _In_ int nFlags = 0);
 	int SendTo(_In_reads_bytes_(nBufLen) const void* pBuf, _In_ int nBufLen, _In_reads_bytes_(nSockAddrLen) const SOCKADDR* pSockAddr, _In_ int nSockAddrLen, _In_ int nFlags = 0);
-	int SendTo(_In_reads_bytes_(nBufLen) const void* pBuf, _In_ int nBufLen, _In_ UINT nHostPort, _In_z_ LPCTSTR pszHostAddress = nullptr, _In_ int nFlags = 0);
-	void ShutDown(_In_ int nHow = SD_SEND);*/
+	int SendTo(_In_reads_bytes_(nBufLen) const void* pBuf, _In_ int nBufLen, _In_ UINT nHostPort, _In_z_ LPCTSTR pszHostAddress = nullptr, _In_ int nFlags = 0);*/
 
 protected:
     // Member variables

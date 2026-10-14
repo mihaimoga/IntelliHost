@@ -26,6 +26,8 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 #include <cstring>
 #include <climits>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
 #include <cerrno>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -43,15 +45,6 @@ namespace
 	using SockLen = socklen_t;
 	int LastSocketError() noexcept { return errno; }
 #endif
-
-	std::string ToNarrow(const CSocketSTL::String& sValue)
-	{
-		std::string sResult;
-		sResult.reserve(sValue.size());
-		for (const auto ch : sValue)
-			sResult.push_back(static_cast<char>(ch));
-		return sResult;
-	}
 
 	void FormatAddress(const sockaddr_storage& sockAddr, std::string& sAddress, UINT& nPort)
 	{
@@ -386,15 +379,49 @@ void CSocketSTL::Bind(const SOCKADDR* pSockAddr, const int nSockAddrLen) const
 		throw CSocketException(LastSocketError());
 }
 
+void CSocketSTL::IOCtl(long lCommand, DWORD* pArgument)
+{
+	if (pArgument == nullptr)
+		throw CSocketException(
+#if defined(_WIN32)
+			WSAEFAULT
+#else
+			EFAULT
+#endif
+		);
+#if defined(_WIN32)
+	u_long ulArgument = static_cast<u_long>(*pArgument);
+	if (::ioctlsocket(m_hSocket, lCommand, &ulArgument) == SOCKET_ERROR)
+		throw CSocketException(LastSocketError());
+	*pArgument = static_cast<DWORD>(ulArgument);
+#else
+	if (lCommand == FIONBIO)
+	{
+		// Winsock semantics: non-zero argument enables non-blocking mode
+		const int nFlags = ::fcntl(m_hSocket, F_GETFL, 0);
+		if (nFlags == -1)
+			throw CSocketException(LastSocketError());
+		const int nNewFlags = (*pArgument != 0) ? (nFlags | O_NONBLOCK) : (nFlags & ~O_NONBLOCK);
+		if (nNewFlags != nFlags && ::fcntl(m_hSocket, F_SETFL, nNewFlags) == -1)
+			throw CSocketException(LastSocketError());
+		return;
+	}
+	// Linux ioctl requests expect an int, not a 64-bit unsigned long
+	int nArgument = static_cast<int>(*pArgument);
+	if (::ioctl(m_hSocket, static_cast<unsigned long>(lCommand), &nArgument) == -1)
+		throw CSocketException(LastSocketError());
+	*pArgument = static_cast<DWORD>(nArgument);
+#endif
+}
 
+void CSocketSTL::Listen(const int nConnectionBacklog) const
+{
+	if (::listen(m_hSocket, nConnectionBacklog) == SOCKET_ERROR)
+		throw CSocketException(LastSocketError());
+}
 
-
-
-
-
-
-
-
-
-
-
+void CSocketSTL::ShutDown(const int nHow) const
+{
+	if (::shutdown(m_hSocket, nHow) == SOCKET_ERROR)
+		throw CSocketException(LastSocketError());
+}
