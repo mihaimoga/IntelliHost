@@ -164,8 +164,28 @@ bool CSocketException::GetErrorMessage(std::string& strError, unsigned int* pnHe
 #endif
 }
 
+namespace
+{
+#if defined(_WIN32)
+	// Initializes Winsock once per process and cleans up at exit.
+	struct WinsockInit
+	{
+		WinsockInit() noexcept { WSADATA wsaData{}; ::WSAStartup(MAKEWORD(2, 2), &wsaData); }
+		~WinsockInit() { ::WSACleanup(); }
+	};
+#endif
+
+	void EnsureSocketsInitialized() noexcept
+	{
+#if defined(_WIN32)
+		static const WinsockInit s_Init;
+#endif
+	}
+}
+
 CSocketSTL::CSocketSTL() noexcept : m_hSocket{ INVALID_SOCKET }
 {
+	EnsureSocketsInitialized();
 }
 
 CSocketSTL::~CSocketSTL() noexcept

@@ -16,6 +16,10 @@ target_include_directories(IntelliHost PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
+if(WIN32)
+    target_link_libraries(IntelliHost PRIVATE ws2_32)
+endif()
+
 target_compile_options(IntelliHost PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Wconversion>
 )
