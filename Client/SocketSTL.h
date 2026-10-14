@@ -103,7 +103,7 @@ public:
 	void ShutDown(int nHow) const;
 	int Receive(void* pBuffer, int nBufLen, int nFlags = 0) const;
 	int ReceiveFrom(void* pBuffer, int nBufLen, SOCKADDR* pSockAddr,  int* SockAddrLen, int nFlags = 0) const;
-	int ReceiveFrom(void* pBuffer, int nBufLen, String& strSocketAddress, UINT& nSocketPort, int nReceiveFromFlags = 0, int nAddressToStringFlags = 0);
+	int ReceiveFrom(void* pBuffer, int nBufLen, String& strSocketAddress, UINT& nSocketPort, int nReceiveFromFlags = 0, int nAddressToStringFlags = 0) const;
 	int Send(const void* pBuffer, int nBufLen, int nFlags = 0) const;
 	int SendTo(const void* pBuffer, int nBufLen, const SOCKADDR* pSockAddr, int nSockAddrLen, int nFlags = 0) const;
 	int SendTo( const void* pBuffer, int nBufLen, UINT nHostPort, const String& strHostAddress, int nFlags = 0) const;

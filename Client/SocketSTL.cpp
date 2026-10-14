@@ -416,8 +416,22 @@ void CSocketSTL::CreateAndBind(const UINT nSocketPort, const int nSocketType, co
 
 void CSocketSTL::Bind(const SOCKADDR* pSockAddr, const int nSockAddrLen) const
 {
+	if (pSockAddr == nullptr || nSockAddrLen <= 0)
+		throw CSocketException(
+#if defined(_WIN32)
+			WSAEFAULT
+#else
+			EINVAL
+#endif
+		);
+
+#if defined(_WIN32)
 	if (::bind(m_hSocket, pSockAddr, nSockAddrLen) == SOCKET_ERROR)
 		throw CSocketException(LastSocketError());
+#else
+	if (::bind(m_hSocket, pSockAddr, static_cast<socklen_t>(nSockAddrLen)) == -1)
+		throw CSocketException(LastSocketError());
+#endif
 }
 
 void CSocketSTL::IOCtl(long lCommand, DWORD* pArgument) const
@@ -457,14 +471,49 @@ void CSocketSTL::IOCtl(long lCommand, DWORD* pArgument) const
 
 void CSocketSTL::Listen(const int nConnectionBacklog) const
 {
-	if (::listen(m_hSocket, nConnectionBacklog) == SOCKET_ERROR)
+#if defined(_WIN32)
+	// Negative backlog is invalid; SOMAXCONN lets Winsock pick a sensible maximum
+	const int nBacklog{ nConnectionBacklog > 0 ? nConnectionBacklog : SOMAXCONN };
+	if (::listen(m_hSocket, nBacklog) == SOCKET_ERROR)
 		throw CSocketException(LastSocketError());
+#else
+	const int nBacklog{ nConnectionBacklog > 0 ? nConnectionBacklog : SOMAXCONN };
+	int nResult;
+	do
+	{
+		nResult = ::listen(m_hSocket, nBacklog);
+	} while (nResult == -1 && errno == EINTR);
+	if (nResult == -1)
+		throw CSocketException(LastSocketError());
+#endif
 }
 
 void CSocketSTL::ShutDown(const int nHow) const
 {
-	if (::shutdown(m_hSocket, nHow) == SOCKET_ERROR)
+	// 0 = receive, 1 = send, 2 = both (SD_* on Windows, SHUT_* on Linux share these values)
+	if (nHow < 0 || nHow > 2)
+		throw CSocketException(
+#if defined(_WIN32)
+			WSAEINVAL
+#else
+			EINVAL
+#endif
+		);
+
+#if defined(_WIN32)
+	const int nMode{ nHow == 0 ? SD_RECEIVE : (nHow == 1 ? SD_SEND : SD_BOTH) };
+	if (::shutdown(m_hSocket, nMode) == SOCKET_ERROR)
 		throw CSocketException(LastSocketError());
+#else
+	const int nMode{ nHow == 0 ? SHUT_RD : (nHow == 1 ? SHUT_WR : SHUT_RDWR) };
+	int nResult;
+	do
+	{
+		nResult = ::shutdown(m_hSocket, nMode);
+	} while (nResult == -1 && errno == EINTR);
+	if (nResult == -1)
+		throw CSocketException(LastSocketError());
+#endif
 }
 
 int CSocketSTL::Receive(void* pBuf, const int nBufLen, const int nFlags) const
@@ -532,7 +581,7 @@ int CSocketSTL::ReceiveFrom(void* pBuffer, int nBufLen, SOCKADDR* pSockAddr, int
 	return nReceived;
 }
 
-int CSocketSTL::ReceiveFrom(void* pBuffer, const int nBufLen, String& strSocketAddress, UINT& nSocketPort, const int nReceiveFromFlags, int /*nAddressToStringFlags*/)
+int CSocketSTL::ReceiveFrom(void* pBuffer, const int nBufLen, String& strSocketAddress, UINT& nSocketPort, const int nReceiveFromFlags, int /*nAddressToStringFlags*/) const
 {
 	sockaddr_storage sockAddr{};
 	int nSockAddrLen{ static_cast<int>(sizeof(sockAddr)) };
