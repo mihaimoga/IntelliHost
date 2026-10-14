@@ -15,14 +15,13 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 
 #include "SocketSTL.h"
 
-#include <climits>
-
 #if defined(_WIN32)
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
 #else
 #include <cstring>
+#include <climits>
 #include <unistd.h>
 #include <cerrno>
 #include <sys/socket.h>
@@ -65,7 +64,7 @@ namespace
 
 	// Waits up to dwTimeout ms for the requested event; error/hang-up also count as ready
 	// so that the following recv/send reports the actual condition.
-	bool PollSocket(SOCKET hSocket, short nEvents, DWORD dwTimeout)
+	bool PollSocket(SOCKET hSocket, short nEvents, const DWORD dwTimeout)
 	{
 		const int nTimeout{ dwTimeout > static_cast<DWORD>(INT_MAX) ? INT_MAX : static_cast<int>(dwTimeout) };
 #if defined(_WIN32)
@@ -251,12 +250,12 @@ bool CSocketSTL::IsCreated() const noexcept
 	return (m_hSocket != INVALID_SOCKET);
 }
 
-bool CSocketSTL::IsReadible(DWORD dwTimeout) const
+bool CSocketSTL::IsReadible(const DWORD dwTimeout) const
 {
 	return PollSocket(m_hSocket, POLLIN, dwTimeout);
 }
 
-bool CSocketSTL::IsWritable(DWORD dwTimeout) const
+bool CSocketSTL::IsWritable(const DWORD dwTimeout) const
 {
 	return PollSocket(m_hSocket, POLLOUT, dwTimeout);
 }

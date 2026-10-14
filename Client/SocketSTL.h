@@ -80,8 +80,8 @@ public:
     void SetSockOpt(int nOptionName, const void* pOptionValue, int nOptionLen, int nLevel) const;
     void GetSockOpt(int nOptionName, void* pOptionValue, int* pOptionLen, int nLevel) const;
     [[nodiscard]] bool IsCreated() const noexcept;
-    [[nodiscard]] bool IsReadible(DWORD dwTimeout) const;
-    [[nodiscard]] bool IsWritable(DWORD dwTimeout) const;
+    [[nodiscard]] bool IsReadible(const DWORD dwTimeout) const;
+    [[nodiscard]] bool IsWritable(const DWORD dwTimeout) const;
     void SetBindAddress(const String& sBindAddress) { m_sBindAddress = sBindAddress; };
     [[nodiscard]] String GetBindAddress() const { return m_sBindAddress; };
 
