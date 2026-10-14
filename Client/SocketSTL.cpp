@@ -281,8 +281,49 @@ void CSocketSTL::Create(const int nSocketType, const int nProtocolType, const in
 
 void CSocketSTL::Connect(const SOCKADDR* pSockAddr, const int nSockAddrLen) const
 {
+	if (pSockAddr == nullptr || nSockAddrLen <= 0)
+		throw CSocketException(
+#if defined(_WIN32)
+			WSAEINVAL
+#else
+			EINVAL
+#endif
+		);
+
+#if defined(_WIN32)
 	if (::connect(m_hSocket, pSockAddr, nSockAddrLen) == SOCKET_ERROR)
-		throw CSocketException(LastSocketError());
+	{
+		// A non-blocking socket reports WSAEWOULDBLOCK while the connection is in progress:
+		// wait for writability, then check the pending socket error.
+		if (WSAGetLastError() != WSAEWOULDBLOCK)
+			throw CSocketException(LastSocketError());
+		if (!PollSocket(m_hSocket, POLLOUT, INFINITE))
+			throw CSocketException(WSAETIMEDOUT);
+		int nError{ 0 };
+		int nLen{ static_cast<int>(sizeof(nError)) };
+		if (getsockopt(m_hSocket, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&nError), &nLen) != 0)
+			throw CSocketException(LastSocketError());
+		if (nError != 0)
+			throw CSocketException(nError);
+	}
+#else
+	if (::connect(m_hSocket, pSockAddr, static_cast<socklen_t>(nSockAddrLen)) == SOCKET_ERROR)
+	{
+		// EINTR: the connection continues asynchronously; EINPROGRESS: non-blocking socket.
+		// Either way, wait for writability and then read the final result from SO_ERROR
+		// (retrying connect() after EINTR would fail with EALREADY/EISCONN).
+		if (errno != EINTR && errno != EINPROGRESS)
+			throw CSocketException(LastSocketError());
+		if (!PollSocket(m_hSocket, POLLOUT, static_cast<DWORD>(-1)))
+			throw CSocketException(ETIMEDOUT);
+		int nError{ 0 };
+		socklen_t nLen{ static_cast<socklen_t>(sizeof(nError)) };
+		if (getsockopt(m_hSocket, SOL_SOCKET, SO_ERROR, &nError, &nLen) != 0)
+			throw CSocketException(LastSocketError());
+		if (nError != 0)
+			throw CSocketException(nError);
+	}
+#endif
 }
 
 void CSocketSTL::Accept(CSocketSTL& connectedSocket, SOCKADDR* pSockAddr, int* pSockAddrLen) const
@@ -379,7 +420,7 @@ void CSocketSTL::Bind(const SOCKADDR* pSockAddr, const int nSockAddrLen) const
 		throw CSocketException(LastSocketError());
 }
 
-void CSocketSTL::IOCtl(long lCommand, DWORD* pArgument)
+void CSocketSTL::IOCtl(long lCommand, DWORD* pArgument) const
 {
 	if (pArgument == nullptr)
 		throw CSocketException(
@@ -424,4 +465,176 @@ void CSocketSTL::ShutDown(const int nHow) const
 {
 	if (::shutdown(m_hSocket, nHow) == SOCKET_ERROR)
 		throw CSocketException(LastSocketError());
+}
+
+int CSocketSTL::Receive(void* pBuf, const int nBufLen, const int nFlags) const
+{
+	if (pBuf == nullptr || nBufLen < 0)
+		throw CSocketException(
+#if defined(_WIN32)
+			WSAEINVAL
+#else
+			EINVAL
+#endif
+		);
+
+#if defined(_WIN32)
+	const int nReceived{ ::recv(m_hSocket, static_cast<char*>(pBuf), nBufLen, nFlags) };
+	if (nReceived == SOCKET_ERROR)
+		throw CSocketException(LastSocketError());
+#else
+	ssize_t nResult;
+	do
+	{
+		nResult = ::recv(m_hSocket, pBuf, static_cast<size_t>(nBufLen), nFlags);
+	} while (nResult < 0 && errno == EINTR);
+	if (nResult < 0)
+		throw CSocketException(LastSocketError());
+	const int nReceived{ static_cast<int>(nResult) };
+#endif
+
+	return nReceived;
+}
+
+int CSocketSTL::ReceiveFrom(void* pBuffer, int nBufLen, SOCKADDR* pSockAddr, int* pSockAddrLen, int nFlags) const
+{
+	if (pBuffer == nullptr || nBufLen < 0)
+		throw CSocketException(
+#if defined(_WIN32)
+			WSAEINVAL
+#else
+			EINVAL
+#endif
+		);
+
+	SockLen nLen{ (pSockAddr != nullptr && pSockAddrLen != nullptr) ? static_cast<SockLen>(*pSockAddrLen) : static_cast<SockLen>(0) };
+	SockLen* const pLen{ (pSockAddr != nullptr && pSockAddrLen != nullptr) ? &nLen : nullptr };
+	SOCKADDR* const pFrom{ pLen != nullptr ? pSockAddr : nullptr };
+
+#if defined(_WIN32)
+	const int nReceived{ ::recvfrom(m_hSocket, static_cast<char*>(pBuf), nBufLen, nFlags, pFrom, pLen) };
+	if (nReceived == SOCKET_ERROR)
+		throw CSocketException(LastSocketError());
+#else
+	ssize_t nResult;
+	do
+	{
+		nLen = (pLen != nullptr) ? static_cast<SockLen>(*pSockAddrLen) : static_cast<SockLen>(0);
+		nResult = ::recvfrom(m_hSocket, pBuffer, static_cast<size_t>(nBufLen), nFlags, pFrom, pLen);
+	} while (nResult < 0 && errno == EINTR);
+	if (nResult < 0)
+		throw CSocketException(LastSocketError());
+	const int nReceived{ static_cast<int>(nResult) };
+#endif
+
+	if (pLen != nullptr)
+		*pSockAddrLen = static_cast<int>(nLen);
+	return nReceived;
+}
+
+int CSocketSTL::ReceiveFrom(void* pBuffer, const int nBufLen, String& strSocketAddress, UINT& nSocketPort, const int nReceiveFromFlags, int /*nAddressToStringFlags*/)
+{
+	sockaddr_storage sockAddr{};
+	int nSockAddrLen{ static_cast<int>(sizeof(sockAddr)) };
+	const int nResult{ ReceiveFrom(pBuffer, nBufLen, reinterpret_cast<SOCKADDR*>(&sockAddr), &nSockAddrLen, nReceiveFromFlags) };
+
+	std::string sAddress;
+	FormatAddress(sockAddr, sAddress, nSocketPort);
+	strSocketAddress.assign(sAddress.begin(), sAddress.end());
+	return nResult;
+}
+
+int CSocketSTL::Send(const void* pBuffer, int nBufLen, int nFlags) const
+{
+#if defined(_WIN32)
+	const int nSent{ ::send(m_hSocket, static_cast<const char*>(pBuffer), nBufLen, nFlags) };
+	if (nSent == SOCKET_ERROR)
+		throw CSocketException(LastSocketError());
+	return nSent;
+#else
+#if defined(MSG_NOSIGNAL)
+	nFlags |= MSG_NOSIGNAL; // report EPIPE instead of raising SIGPIPE
+#endif
+	ssize_t nResult;
+	do
+	{
+		nResult = ::send(m_hSocket, pBuffer, static_cast<size_t>(nBufLen), nFlags);
+	} while (nResult < 0 && errno == EINTR);
+	if (nResult < 0)
+		throw CSocketException(LastSocketError());
+	return static_cast<int>(nResult);
+#endif
+}
+
+int CSocketSTL::SendTo(const void* pBuffer, int nBufLen, const SOCKADDR* pSockAddr, int nSockAddrLen, int nFlags) const
+{
+	if (pBuffer == nullptr || nBufLen < 0 || pSockAddr == nullptr || nSockAddrLen <= 0)
+		throw CSocketException(
+#if defined(_WIN32)
+			WSAEINVAL
+#else
+			EINVAL
+#endif
+		);
+
+#if defined(_WIN32)
+	const int nSent{ ::sendto(m_hSocket, static_cast<const char*>(pBuffer), nBufLen, nFlags, pSockAddr, nSockAddrLen) };
+	if (nSent == SOCKET_ERROR)
+		throw CSocketException(LastSocketError());
+	return nSent;
+#else
+#if defined(MSG_NOSIGNAL)
+	nFlags |= MSG_NOSIGNAL; // report EPIPE instead of raising SIGPIPE
+#endif
+	ssize_t nResult;
+	do
+	{
+		nResult = ::sendto(m_hSocket, pBuffer, static_cast<size_t>(nBufLen), nFlags, pSockAddr, static_cast<SockLen>(nSockAddrLen));
+	} while (nResult < 0 && errno == EINTR);
+	if (nResult < 0)
+		throw CSocketException(LastSocketError());
+	return static_cast<int>(nResult);
+#endif
+}
+
+int CSocketSTL::SendTo(const void* pBuffer, int nBufLen, UINT nHostPort, const String& strHostAddress, int nFlags) const
+{
+	if (nHostPort > 65535)
+		throw CSocketException(
+#if defined(_WIN32)
+			WSAEINVAL
+#else
+			EINVAL
+#endif
+		);
+
+	std::string sHost;
+	for (const auto ch : strHostAddress)
+		sHost.push_back(static_cast<char>(ch));
+	const std::string sPort{ std::to_string(nHostPort) };
+
+	addrinfo hints{};
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_DGRAM;
+
+	addrinfo* pResult{ nullptr };
+	const int nError{ ::getaddrinfo(sHost.empty() ? nullptr : sHost.c_str(), sPort.c_str(), &hints, &pResult) };
+	if (nError != 0)
+		throw CSocketException(nError);
+	const std::unique_ptr<addrinfo, decltype(&::freeaddrinfo)> lookup{ pResult, &::freeaddrinfo };
+
+	// Try each resolved address until one accepts the datagram
+	int nLastError{ 0 };
+	for (const addrinfo* pAddress = pResult; pAddress != nullptr; pAddress = pAddress->ai_next)
+	{
+		try
+		{
+			return SendTo(pBuffer, nBufLen, pAddress->ai_addr, static_cast<int>(pAddress->ai_addrlen), nFlags);
+		}
+		catch (const CSocketException& e)
+		{
+			nLastError = e.m_nError;
+		}
+	}
+	throw CSocketException(nLastError);
 }
