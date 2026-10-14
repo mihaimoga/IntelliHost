@@ -29,3 +29,23 @@ configure_file(
     IntelliHost.xml
     COPYONLY
 )
+
+# Unit tests for CSocketSTL (built together with the application; run with ctest)
+enable_testing()
+
+add_executable(IntelliTest
+     IntelliTest.cpp
+     SocketSTL.cpp
+)
+
+target_compile_features(IntelliTest PRIVATE cxx_std_26)
+
+target_include_directories(IntelliTest PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+if(WIN32)
+    target_link_libraries(IntelliTest PRIVATE ws2_32)
+endif()
+
+add_test(NAME IntelliTest COMMAND IntelliTest)
