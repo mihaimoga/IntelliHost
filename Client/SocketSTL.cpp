@@ -128,7 +128,7 @@ namespace
  *
  * @param nError errno, WSAGetLastError() or getaddrinfo() result.
  */
-CSocketException::CSocketException(int nError) noexcept : m_nError{ nError }
+CSocketException::CSocketException(int nError) noexcept : _nError{ nError }
 {
 }
 
@@ -141,56 +141,59 @@ CSocketException::CSocketException(int nError) noexcept : m_nError{ nError }
  */
 bool CSocketException::GetErrorMessage(std::string& strError, unsigned int* pnHelpContext) const
 {
-    if (pnHelpContext != nullptr)
-        *pnHelpContext = 0;
+	if (pnHelpContext != nullptr)
+		*pnHelpContext = 0;
 
 #if defined(_WIN32)
-    LPSTR pMessageBuffer = nullptr; // allocated by FormatMessageA, freed with LocalFree
-    const DWORD nLength = ::FormatMessageA(
-        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        nullptr,
-        static_cast<DWORD>(m_nError),
-        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        reinterpret_cast<LPSTR>(&pMessageBuffer),
-        0,
-        nullptr);
+	LPSTR pMessageBuffer{ nullptr }; // allocated by FormatMessageA, freed with LocalFree
+	const DWORD nLength{ ::FormatMessageA(
+		FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+		nullptr,
+		static_cast<DWORD>(_nError),
+		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+		reinterpret_cast<LPSTR>(&pMessageBuffer),
+		0,
+		nullptr) };
 
-    if (nLength == 0 || pMessageBuffer == nullptr) {
-        strError.clear();
-        return false;
-    }
+	if (nLength == 0 || pMessageBuffer == nullptr)
+	{
+		strError.clear();
+		return false;
+	}
 
-    strError.assign(pMessageBuffer, nLength);
-    ::LocalFree(pMessageBuffer);
+	strError.assign(pMessageBuffer, nLength);
+	::LocalFree(pMessageBuffer);
 
-    // Strip the trailing CR/LF that FormatMessage appends
-    while (!strError.empty() && (strError.back() == '\r' || strError.back() == '\n'))
-        strError.pop_back();
+	// Strip the trailing CR/LF that FormatMessage appends
+	while (!strError.empty() && (strError.back() == '\r' || strError.back() == '\n'))
+		strError.pop_back();
 
-    return true;
+	return true;
 #elif defined(__linux__)
-    char szMessage[256]{};
+	char szMessage[256]{};
 
 #if defined(__GLIBC__) && defined(_GNU_SOURCE)
-    // GNU strerror_r returns a char* (which may not point into szMessage)
-    const char* pszMessage = ::strerror_r(m_nError, szMessage, sizeof(szMessage));
-    if (pszMessage == nullptr) {
-        strError.clear();
-        return false;
-    }
+	// GNU strerror_r returns a char* (which may not point into szMessage)
+	const char* pszMessage{ ::strerror_r(_nError, szMessage, sizeof(szMessage)) };
+	if (pszMessage == nullptr)
+	{
+		strError.clear();
+		return false;
+	}
 
-    strError = pszMessage;
+	strError = pszMessage;
 #else
-    // XSI strerror_r returns 0 on success
-    if (::strerror_r(m_nError, szMessage, sizeof(szMessage)) != 0) {
-        strError.clear();
-        return false;
-    }
+	// XSI strerror_r returns 0 on success
+	if (::strerror_r(_nError, szMessage, sizeof(szMessage)) != 0)
+	{
+		strError.clear();
+		return false;
+	}
 
-    strError = szMessage;
+	strError = szMessage;
 #endif
 
-    return !strError.empty();
+	return !strError.empty();
 #else
 #error "CSocketException::GetErrorMessage is supported only on Windows and Linux."
 #endif
@@ -222,7 +225,7 @@ namespace
  * Default constructor. Holds no socket and ensures the socket subsystem
  * (Winsock on Windows) is initialized.
  */
-CSocketSTL::CSocketSTL() noexcept : m_hSocket{ INVALID_SOCKET }
+CSocketSTL::CSocketSTL() noexcept : _hSocket{ INVALID_SOCKET }
 {
 	EnsureSocketsInitialized();
 }
@@ -232,8 +235,8 @@ CSocketSTL::CSocketSTL() noexcept : m_hSocket{ INVALID_SOCKET }
  */
 CSocketSTL::~CSocketSTL() noexcept
 {
-    if (m_hSocket != INVALID_SOCKET)
-        Close();
+	if (_hSocket != INVALID_SOCKET)
+		Close();
 }
 
 /**
@@ -241,16 +244,16 @@ CSocketSTL::~CSocketSTL() noexcept
  */
 void CSocketSTL::Close() noexcept
 {
-    // Reset the handle afterwards so repeated calls are harmless
-    if (m_hSocket != INVALID_SOCKET)
-    {
+	// Reset the handle afterwards so repeated calls are harmless
+	if (_hSocket != INVALID_SOCKET)
+	{
 #if defined(_WIN32)
-        closesocket(m_hSocket);
+		closesocket(_hSocket);
 #else
-        close(m_hSocket);
+		close(_hSocket);
 #endif
-        m_hSocket = INVALID_SOCKET;
-    }
+		_hSocket = INVALID_SOCKET;
+	}
 }
 
 /**
@@ -260,10 +263,10 @@ void CSocketSTL::Close() noexcept
  */
 void CSocketSTL::Attach(SOCKET hSocket) noexcept
 {
-    // Release any socket we already own before taking the new one
-    if (m_hSocket != INVALID_SOCKET)
-        Close();
-    m_hSocket = hSocket;
+	// Release any socket we already own before taking the new one
+	if (_hSocket != INVALID_SOCKET)
+		Close();
+	_hSocket = hSocket;
 }
 
 /**
@@ -273,10 +276,10 @@ void CSocketSTL::Attach(SOCKET hSocket) noexcept
  */
 SOCKET CSocketSTL::Detach() noexcept
 {
-    // Hand the handle to the caller without closing it
-    const SOCKET socket{ m_hSocket };
-    m_hSocket = INVALID_SOCKET;
-    return socket;
+	// Hand the handle to the caller without closing it
+	const SOCKET socket{ _hSocket };
+	_hSocket = INVALID_SOCKET;
+	return socket;
 }
 
 /**
@@ -326,7 +329,7 @@ void CSocketSTL::GetPeerName(SOCKADDR* pSockAddr, int* pSockAddrLen) const
 {
 	// Use the platform's length type, then copy the result back as int
 	SockLen nLen{ static_cast<SockLen>(*pSockAddrLen) };
-	if (getpeername(m_hSocket, pSockAddr, &nLen) != 0)
+	if (getpeername(_hSocket, pSockAddr, &nLen) != 0)
 		throw CSocketException(LastSocketError());
 	*pSockAddrLen = static_cast<int>(nLen);
 }
@@ -341,7 +344,7 @@ void CSocketSTL::GetPeerName(SOCKADDR* pSockAddr, int* pSockAddrLen) const
 void CSocketSTL::GetSockName(SOCKADDR* pSockAddr, int* pSockAddrLen) const
 {
 	SockLen nLen{ static_cast<SockLen>(*pSockAddrLen) };
-	if (getsockname(m_hSocket, pSockAddr, &nLen) != 0)
+	if (getsockname(_hSocket, pSockAddr, &nLen) != 0)
 		throw CSocketException(LastSocketError());
 	*pSockAddrLen = static_cast<int>(nLen);
 }
@@ -357,7 +360,7 @@ void CSocketSTL::GetSockName(SOCKADDR* pSockAddr, int* pSockAddrLen) const
  */
 void CSocketSTL::SetSockOpt(int nOptionName, const void* pOptionValue, int nOptionLen, int nLevel) const
 {
-	if (setsockopt(m_hSocket, nLevel, nOptionName, static_cast<const char*>(pOptionValue), static_cast<SockLen>(nOptionLen)) != 0)
+	if (setsockopt(_hSocket, nLevel, nOptionName, static_cast<const char*>(pOptionValue), static_cast<SockLen>(nOptionLen)) != 0)
 		throw CSocketException(LastSocketError());
 }
 
@@ -373,7 +376,7 @@ void CSocketSTL::SetSockOpt(int nOptionName, const void* pOptionValue, int nOpti
 void CSocketSTL::GetSockOpt(int nOptionName, void* pOptionValue, int* pOptionLen, int nLevel) const
 {
 	SockLen nLen{ static_cast<SockLen>(*pOptionLen) }; // in: buffer size, out: bytes written
-	if (getsockopt(m_hSocket, nLevel, nOptionName, static_cast<char*>(pOptionValue), &nLen) != 0)
+	if (getsockopt(_hSocket, nLevel, nOptionName, static_cast<char*>(pOptionValue), &nLen) != 0)
 		throw CSocketException(LastSocketError());
 	*pOptionLen = static_cast<int>(nLen);
 }
@@ -383,7 +386,7 @@ void CSocketSTL::GetSockOpt(int nOptionName, void* pOptionValue, int* pOptionLen
  */
 bool CSocketSTL::IsCreated() const noexcept
 {
-	return (m_hSocket != INVALID_SOCKET);
+	return (_hSocket != INVALID_SOCKET);
 }
 
 /**
@@ -395,7 +398,7 @@ bool CSocketSTL::IsCreated() const noexcept
  */
 bool CSocketSTL::IsReadible(const DWORD dwTimeout) const
 {
-	return PollSocket(m_hSocket, POLLIN, dwTimeout); // POLLIN: data (or a pending connection) is available
+	return PollSocket(_hSocket, POLLIN, dwTimeout); // POLLIN: data (or a pending connection) is available
 }
 
 /**
@@ -407,7 +410,7 @@ bool CSocketSTL::IsReadible(const DWORD dwTimeout) const
  */
 bool CSocketSTL::IsWritable(const DWORD dwTimeout) const
 {
-	return PollSocket(m_hSocket, POLLOUT, dwTimeout); // POLLOUT: a send will not block
+	return PollSocket(_hSocket, POLLOUT, dwTimeout); // POLLOUT: a send will not block
 }
 
 
@@ -434,9 +437,9 @@ void CSocketSTL::Create(bool bUDP, bool bIPv6)
  */
 void CSocketSTL::Create(const int nSocketType, const int nProtocolType, const int nAddressFormat)
 {
-	// Note: overwrites m_hSocket without closing a previous handle
-	m_hSocket = ::socket(nAddressFormat, nSocketType, nProtocolType);
-	if (m_hSocket == INVALID_SOCKET)
+	// Note: overwrites _hSocket without closing a previous handle
+	_hSocket = ::socket(nAddressFormat, nSocketType, nProtocolType);
+	if (_hSocket == INVALID_SOCKET)
 		throw CSocketException(LastSocketError());
 }
 
@@ -461,34 +464,34 @@ void CSocketSTL::Connect(const SOCKADDR* pSockAddr, const int nSockAddrLen) cons
 		);
 
 #if defined(_WIN32)
-	if (::connect(m_hSocket, pSockAddr, nSockAddrLen) == SOCKET_ERROR)
+	if (::connect(_hSocket, pSockAddr, nSockAddrLen) == SOCKET_ERROR)
 	{
 		// A non-blocking socket reports WSAEWOULDBLOCK while the connection is in progress:
 		// wait for writability, then check the pending socket error.
 		if (WSAGetLastError() != WSAEWOULDBLOCK)
 			throw CSocketException(LastSocketError());
-		if (!PollSocket(m_hSocket, POLLOUT, INFINITE))
+		if (!PollSocket(_hSocket, POLLOUT, INFINITE))
 			throw CSocketException(WSAETIMEDOUT);
 		int nError{ 0 };
 		int nLen{ static_cast<int>(sizeof(nError)) };
-		if (getsockopt(m_hSocket, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&nError), &nLen) != 0)
+		if (getsockopt(_hSocket, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&nError), &nLen) != 0)
 			throw CSocketException(LastSocketError());
 		if (nError != 0)
 			throw CSocketException(nError);
 	}
 #else
-	if (::connect(m_hSocket, pSockAddr, static_cast<socklen_t>(nSockAddrLen)) == SOCKET_ERROR)
+	if (::connect(_hSocket, pSockAddr, static_cast<socklen_t>(nSockAddrLen)) == SOCKET_ERROR)
 	{
 		// EINTR: the connection continues asynchronously; EINPROGRESS: non-blocking socket.
 		// Either way, wait for writability and then read the final result from SO_ERROR
 		// (retrying connect() after EINTR would fail with EALREADY/EISCONN).
 		if (errno != EINTR && errno != EINPROGRESS)
 			throw CSocketException(LastSocketError());
-		if (!PollSocket(m_hSocket, POLLOUT, static_cast<DWORD>(-1)))
+		if (!PollSocket(_hSocket, POLLOUT, static_cast<DWORD>(-1)))
 			throw CSocketException(ETIMEDOUT);
 		int nError{ 0 };
 		socklen_t nLen{ static_cast<socklen_t>(sizeof(nError)) };
-		if (getsockopt(m_hSocket, SOL_SOCKET, SO_ERROR, &nError, &nLen) != 0)
+		if (getsockopt(_hSocket, SOL_SOCKET, SO_ERROR, &nError, &nLen) != 0)
 			throw CSocketException(LastSocketError());
 		if (nError != 0)
 			throw CSocketException(nError);
@@ -512,7 +515,7 @@ void CSocketSTL::Accept(CSocketSTL& connectedSocket, SOCKADDR* pSockAddr, int* p
 	SOCKET socket{ INVALID_SOCKET };
 
 #if defined(_WIN32)
-	socket = accept(m_hSocket, pLen != nullptr ? pSockAddr : nullptr, pLen);
+	socket = accept(_hSocket, pLen != nullptr ? pSockAddr : nullptr, pLen);
 	if (socket == INVALID_SOCKET)
 		throw CSocketException(LastSocketError());
 #else
@@ -520,7 +523,7 @@ void CSocketSTL::Accept(CSocketSTL& connectedSocket, SOCKADDR* pSockAddr, int* p
 	do
 	{
 		nLen = (pSockAddrLen != nullptr) ? static_cast<SockLen>(*pSockAddrLen) : static_cast<SockLen>(0);
-		socket = ::accept(m_hSocket, pLen != nullptr ? pSockAddr : nullptr, pLen);
+		socket = ::accept(_hSocket, pLen != nullptr ? pSockAddr : nullptr, pLen);
 	} while (socket == INVALID_SOCKET && errno == EINTR);
 	if (socket == INVALID_SOCKET)
 		throw CSocketException(LastSocketError());
@@ -558,7 +561,7 @@ void CSocketSTL::CreateAndBind(const UINT nSocketPort, const int nSocketType, co
 	// Bind to a specific IP address when one was configured, otherwise to the wildcard address
 	// of the requested family (AF_INET6 or AF_INET).
 	std::string sBindAddress;
-	for (const auto ch : m_sBindAddress)
+	for (const auto ch : _sBindAddress)
 		sBindAddress.push_back(static_cast<char>(ch));
 	const std::string sPort{ std::to_string(nSocketPort) };
 
@@ -592,11 +595,11 @@ void CSocketSTL::CreateAndBind(const UINT nSocketPort, const int nSocketType, co
 		}
 		catch (const CSocketException& e)
 		{
-			nLastError = e.m_nError;
+			nLastError = e._nError;
 			continue;
 		}
 
-		if (::bind(m_hSocket, pAddress->ai_addr, static_cast<SockLen>(pAddress->ai_addrlen)) == 0)
+		if (::bind(_hSocket, pAddress->ai_addr, static_cast<SockLen>(pAddress->ai_addrlen)) == 0)
 			return;
 
 		nLastError = LastSocketError();
@@ -624,10 +627,10 @@ void CSocketSTL::Bind(const SOCKADDR* pSockAddr, const int nSockAddrLen) const
 		);
 
 #if defined(_WIN32)
-	if (::bind(m_hSocket, pSockAddr, nSockAddrLen) == SOCKET_ERROR)
+	if (::bind(_hSocket, pSockAddr, nSockAddrLen) == SOCKET_ERROR)
 		throw CSocketException(LastSocketError());
 #else
-	if (::bind(m_hSocket, pSockAddr, static_cast<socklen_t>(nSockAddrLen)) == -1)
+	if (::bind(_hSocket, pSockAddr, static_cast<socklen_t>(nSockAddrLen)) == -1)
 		throw CSocketException(LastSocketError());
 #endif
 }
@@ -652,24 +655,24 @@ void CSocketSTL::IOCtl(long lCommand, DWORD* pArgument) const
 #if defined(_WIN32)
 	// ioctlsocket takes a u_long in/out argument
 	u_long ulArgument = static_cast<u_long>(*pArgument);
-	if (::ioctlsocket(m_hSocket, lCommand, &ulArgument) == SOCKET_ERROR)
+	if (::ioctlsocket(_hSocket, lCommand, &ulArgument) == SOCKET_ERROR)
 		throw CSocketException(LastSocketError());
 	*pArgument = static_cast<DWORD>(ulArgument);
 #else
 	if (lCommand == FIONBIO)
 	{
 		// Winsock semantics: non-zero argument enables non-blocking mode
-		const int nFlags = ::fcntl(m_hSocket, F_GETFL, 0);
+		const int nFlags = ::fcntl(_hSocket, F_GETFL, 0);
 		if (nFlags == -1)
 			throw CSocketException(LastSocketError());
 		const int nNewFlags = (*pArgument != 0) ? (nFlags | O_NONBLOCK) : (nFlags & ~O_NONBLOCK);
-		if (nNewFlags != nFlags && ::fcntl(m_hSocket, F_SETFL, nNewFlags) == -1)
+		if (nNewFlags != nFlags && ::fcntl(_hSocket, F_SETFL, nNewFlags) == -1)
 			throw CSocketException(LastSocketError());
 		return;
 	}
 	// Linux ioctl requests expect an int, not a 64-bit unsigned long
 	int nArgument = static_cast<int>(*pArgument);
-	if (::ioctl(m_hSocket, static_cast<unsigned long>(lCommand), &nArgument) == -1)
+	if (::ioctl(_hSocket, static_cast<unsigned long>(lCommand), &nArgument) == -1)
 		throw CSocketException(LastSocketError());
 	*pArgument = static_cast<DWORD>(nArgument);
 #endif
@@ -686,14 +689,14 @@ void CSocketSTL::Listen(const int nConnectionBacklog) const
 #if defined(_WIN32)
 	// Negative backlog is invalid; SOMAXCONN lets Winsock pick a sensible maximum
 	const int nBacklog{ nConnectionBacklog > 0 ? nConnectionBacklog : SOMAXCONN };
-	if (::listen(m_hSocket, nBacklog) == SOCKET_ERROR)
+	if (::listen(_hSocket, nBacklog) == SOCKET_ERROR)
 		throw CSocketException(LastSocketError());
 #else
 	const int nBacklog{ nConnectionBacklog > 0 ? nConnectionBacklog : SOMAXCONN };
 	int nResult;
 	do
 	{
-		nResult = ::listen(m_hSocket, nBacklog);
+		nResult = ::listen(_hSocket, nBacklog);
 	} while (nResult == -1 && errno == EINTR);
 	if (nResult == -1)
 		throw CSocketException(LastSocketError());
@@ -720,14 +723,14 @@ void CSocketSTL::ShutDown(const int nHow) const
 
 #if defined(_WIN32)
 	const int nMode{ nHow == 0 ? SD_RECEIVE : (nHow == 1 ? SD_SEND : SD_BOTH) };
-	if (::shutdown(m_hSocket, nMode) == SOCKET_ERROR)
+	if (::shutdown(_hSocket, nMode) == SOCKET_ERROR)
 		throw CSocketException(LastSocketError());
 #else
 	const int nMode{ nHow == 0 ? SHUT_RD : (nHow == 1 ? SHUT_WR : SHUT_RDWR) };
 	int nResult;
 	do
 	{
-		nResult = ::shutdown(m_hSocket, nMode);
+		nResult = ::shutdown(_hSocket, nMode);
 	} while (nResult == -1 && errno == EINTR);
 	if (nResult == -1)
 		throw CSocketException(LastSocketError());
@@ -756,14 +759,14 @@ int CSocketSTL::Receive(void* pBuffer, const int nBufLen, const int nFlags) cons
 		);
 
 #if defined(_WIN32)
-	const int nReceived{ ::recv(m_hSocket, static_cast<char*>(pBuffer), nBufLen, nFlags) };
+	const int nReceived{ ::recv(_hSocket, static_cast<char*>(pBuffer), nBufLen, nFlags) };
 	if (nReceived == SOCKET_ERROR)
 		throw CSocketException(LastSocketError());
 #else
 	ssize_t nResult; // retry when interrupted by a signal
 	do
 	{
-		nResult = ::recv(m_hSocket, pBuffer, static_cast<size_t>(nBufLen), nFlags);
+		nResult = ::recv(_hSocket, pBuffer, static_cast<size_t>(nBufLen), nFlags);
 	} while (nResult < 0 && errno == EINTR);
 	if (nResult < 0)
 		throw CSocketException(LastSocketError());
@@ -801,7 +804,7 @@ int CSocketSTL::ReceiveFrom(void* pBuffer, const int nBufLen, SOCKADDR* pSockAdd
 	SOCKADDR* const pFrom{ pLen != nullptr ? pSockAddr : nullptr };
 
 #if defined(_WIN32)
-	const int nReceived{ ::recvfrom(m_hSocket, static_cast<char*>(pBuf), nBufLen, nFlags, pFrom, pLen) };
+	const int nReceived{ ::recvfrom(_hSocket, static_cast<char*>(pBuf), nBufLen, nFlags, pFrom, pLen) };
 	if (nReceived == SOCKET_ERROR)
 		throw CSocketException(LastSocketError());
 #else
@@ -809,7 +812,7 @@ int CSocketSTL::ReceiveFrom(void* pBuffer, const int nBufLen, SOCKADDR* pSockAdd
 	do
 	{
 		nLen = (pLen != nullptr) ? static_cast<SockLen>(*pSockAddrLen) : static_cast<SockLen>(0);
-		nResult = ::recvfrom(m_hSocket, pBuffer, static_cast<size_t>(nBufLen), nFlags, pFrom, pLen);
+		nResult = ::recvfrom(_hSocket, pBuffer, static_cast<size_t>(nBufLen), nFlags, pFrom, pLen);
 	} while (nResult < 0 && errno == EINTR);
 	if (nResult < 0)
 		throw CSocketException(LastSocketError());
@@ -859,7 +862,7 @@ int CSocketSTL::ReceiveFrom(void* pBuffer, const int nBufLen, String& strSocketA
 int CSocketSTL::Send(const void* pBuffer, const int nBufLen, int nFlags) const
 {
 #if defined(_WIN32)
-	const int nSent{ ::send(m_hSocket, static_cast<const char*>(pBuffer), nBufLen, nFlags) };
+	const int nSent{ ::send(_hSocket, static_cast<const char*>(pBuffer), nBufLen, nFlags) };
 	if (nSent == SOCKET_ERROR)
 		throw CSocketException(LastSocketError());
 	return nSent;
@@ -870,7 +873,7 @@ int CSocketSTL::Send(const void* pBuffer, const int nBufLen, int nFlags) const
 	ssize_t nResult;
 	do
 	{
-		nResult = ::send(m_hSocket, pBuffer, static_cast<size_t>(nBufLen), nFlags);
+		nResult = ::send(_hSocket, pBuffer, static_cast<size_t>(nBufLen), nFlags);
 	} while (nResult < 0 && errno == EINTR);
 	if (nResult < 0)
 		throw CSocketException(LastSocketError());
@@ -901,7 +904,7 @@ int CSocketSTL::SendTo(const void* pBuffer, const int nBufLen, const SOCKADDR* p
 		);
 
 #if defined(_WIN32)
-	const int nSent{ ::sendto(m_hSocket, static_cast<const char*>(pBuffer), nBufLen, nFlags, pSockAddr, nSockAddrLen) };
+	const int nSent{ ::sendto(_hSocket, static_cast<const char*>(pBuffer), nBufLen, nFlags, pSockAddr, nSockAddrLen) };
 	if (nSent == SOCKET_ERROR)
 		throw CSocketException(LastSocketError());
 	return nSent;
@@ -912,7 +915,7 @@ int CSocketSTL::SendTo(const void* pBuffer, const int nBufLen, const SOCKADDR* p
 	ssize_t nResult;
 	do
 	{
-		nResult = ::sendto(m_hSocket, pBuffer, static_cast<size_t>(nBufLen), nFlags, pSockAddr, static_cast<SockLen>(nSockAddrLen));
+		nResult = ::sendto(_hSocket, pBuffer, static_cast<size_t>(nBufLen), nFlags, pSockAddr, static_cast<SockLen>(nSockAddrLen));
 	} while (nResult < 0 && errno == EINTR);
 	if (nResult < 0)
 		throw CSocketException(LastSocketError());
@@ -969,7 +972,7 @@ int CSocketSTL::SendTo(const void* pBuffer, const int nBufLen, const UINT nHostP
 		}
 		catch (const CSocketException& e)
 		{
-			nLastError = e.m_nError;
+			nLastError = e._nError;
 		}
 	}
 	throw CSocketException(nLastError);

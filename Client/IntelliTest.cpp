@@ -49,7 +49,7 @@ struct Registrar { Registrar(const char* n, std::function<void()> f) { Registry(
 #define CHECK_THROWS_ERR(expr, err) \
     do { \
         bool bThrown = false; int nCode = 0; \
-        try { expr; } catch (const CSocketException& e) { bThrown = true; nCode = e.m_nError; } \
+        try { expr; } catch (const CSocketException& e) { bThrown = true; nCode = e._nError; } \
         if (!bThrown || nCode != (err)) { ++g_nFailures; std::cerr << "    FAILED " << __FILE__ << ":" << __LINE__ << ": " #expr " expected error " #err " got " << (bThrown ? nCode : -1) << "\n"; } \
     } while (0)
 
@@ -101,7 +101,7 @@ void MakeTcpPair(CSocketSTL& listener, CSocketSTL& client, CSocketSTL& server)
 TEST(Exception_StoresErrorCode)
 {
     CSocketException e(ECONNREFUSED);
-    CHECK(e.m_nError == ECONNREFUSED);
+    CHECK(e._nError == ECONNREFUSED);
 }
 
 TEST(Exception_MessageForKnownError)
@@ -169,7 +169,7 @@ TEST(Socket_CreateIPv6)
 {
     CSocketSTL s;
     try { s.Create(false, true); }
-    catch (const CSocketException& e) { if (e.m_nError == EAFNOSUPPORT) return; throw; }
+    catch (const CSocketException& e) { if (e._nError == EAFNOSUPPORT) return; throw; }
     sockaddr_in6 a{};
     int len = static_cast<int>(sizeof(a));
     // unbound socket: family must still be AF_INET6
@@ -469,7 +469,7 @@ TEST(Tcp_AcceptNonBlockingNoPendingThrows)
     s.IOCtl(FIONBIO, &on);
     CSocketSTL c;
     bool bThrown = false;
-    try { s.Accept(c); } catch (const CSocketException& e) { bThrown = (e.m_nError == EAGAIN || e.m_nError == EWOULDBLOCK); }
+    try { s.Accept(c); } catch (const CSocketException& e) { bThrown = (e._nError == EAGAIN || e._nError == EWOULDBLOCK); }
     CHECK(bThrown);
     CHECK(!c.IsCreated());
 }
@@ -644,7 +644,7 @@ TEST(Udp_ReceiveFromNonBlockingEmptyThrows)
     char buf[4];
     bool bThrown = false;
     try { (void)s.ReceiveFrom(buf, sizeof(buf), nullptr, nullptr); }
-    catch (const CSocketException& e) { bThrown = (e.m_nError == EAGAIN || e.m_nError == EWOULDBLOCK); }
+    catch (const CSocketException& e) { bThrown = (e._nError == EAGAIN || e._nError == EWOULDBLOCK); }
     CHECK(bThrown);
 }
 
