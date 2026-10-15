@@ -108,11 +108,11 @@ public:
 
 	/**
 	 * Gets the raw address of the remote peer.
-	 * @param pSockaddr buffer receiving the address
+	 * @param pSockAddr buffer receiving the address
 	 * @param pSockAddrLen in: buffer size, out: address size
 	 * @throws CSocketException on failure
 	 */
-	void GetPeerName(SOCKADDR* pSockaddr, int* pSockAddrLen) const;
+	void GetPeerName(SOCKADDR* pSockAddr, int* pSockAddrLen) const;
 
 	/**
 	 * Gets the local address and port of the socket as text.
@@ -210,12 +210,12 @@ public:
 
 	/**
 	 * Accepts a pending connection.
-	 * @param connectedSocket receives (and takes ownership of) the new connection
+	 * @param objConnectedSocket receives (and takes ownership of) the new connection
 	 * @param pSockAddr optional buffer receiving the peer address
 	 * @param pSockAddrLen in: buffer size, out: address size (used only with pSockAddr)
 	 * @throws CSocketException on failure
 	 */
-	void Accept(CSocketSTL& connectedSocket, SOCKADDR* pSockAddr = nullptr, int* pSockAddrLen = nullptr) const;
+	void Accept(CSocketSTL& objConnectedSocket, SOCKADDR* pSockAddr = nullptr, int* pSockAddrLen = nullptr) const;
 
 	/**
 	 * Creates a socket and binds it to a port, on the address set by SetBindAddress()
@@ -272,12 +272,12 @@ public:
 	 * @param pBuffer destination buffer
 	 * @param nBufLen buffer size in bytes
 	 * @param pSockAddr optional buffer receiving the sender address
-	 * @param SockAddrLen in: buffer size, out: address size
+	 * @param pSockAddrLen in: buffer size, out: address size
 	 * @param nFlags recvfrom() flags
 	 * @return number of bytes received
 	 * @throws CSocketException on invalid arguments or failure
 	 */
-	int ReceiveFrom(void* pBuffer, int nBufLen, SOCKADDR* pSockAddr,  int* SockAddrLen, int nFlags = 0) const;
+	int ReceiveFrom(void* pBuffer, int nBufLen, SOCKADDR* pSockAddr,  int* pSockAddrLen, int nFlags = 0) const;
 
 	/**
 	 * Receives a datagram and returns the sender's address as text.

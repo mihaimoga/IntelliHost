@@ -31,12 +31,12 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 
 namespace
 {
-struct TestCase { const char* name; std::function<void()> body; };
+struct TestCase { const char* pszName; std::function<void()> fnBody; };
 
-std::vector<TestCase>& Registry() { static std::vector<TestCase> r; return r; }
+std::vector<TestCase>& Registry() { static std::vector<TestCase> vecRegistry; return vecRegistry; }
 int g_nFailures = 0;
 
-struct Registrar { Registrar(const char* n, std::function<void()> f) { Registry().push_back({ n, std::move(f) }); } };
+struct Registrar { Registrar(const char* pszName, std::function<void()> fnBody) { Registry().push_back({ pszName, std::move(fnBody) }); } };
 
 #define TEST(name) \
     static void name(); \
@@ -60,39 +60,39 @@ struct Registrar { Registrar(const char* n, std::function<void()> f) { Registry(
         if (!bThrown) { ++g_nFailures; std::cerr << "    FAILED " << __FILE__ << ":" << __LINE__ << ": " #expr " expected CSocketException\n"; } \
     } while (0)
 
-sockaddr_in Loopback(unsigned short port = 0)
+sockaddr_in Loopback(unsigned short nPort = 0)
 {
-    sockaddr_in a{};
-    a.sin_family = AF_INET;
-    a.sin_port = htons(port);
-    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    return a;
+    sockaddr_in sinAddr{};
+    sinAddr.sin_family = AF_INET;
+    sinAddr.sin_port = htons(nPort);
+    sinAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    return sinAddr;
 }
 
-SOCKADDR* AsAddr(sockaddr_in& a) { return reinterpret_cast<SOCKADDR*>(&a); }
-const SOCKADDR* AsAddr(const sockaddr_in& a) { return reinterpret_cast<const SOCKADDR*>(&a); }
+SOCKADDR* AsAddr(sockaddr_in& sinAddr) { return reinterpret_cast<SOCKADDR*>(&sinAddr); }
+const SOCKADDR* AsAddr(const sockaddr_in& sinAddr) { return reinterpret_cast<const SOCKADDR*>(&sinAddr); }
 
-// Binds `s` to an ephemeral loopback port and returns that port.
-unsigned short BindEphemeral(CSocketSTL& s)
+// Binds `objSocket` to an ephemeral loopback nPort and returns that nPort.
+unsigned short BindEphemeral(CSocketSTL& objSocket)
 {
-    sockaddr_in a = Loopback();
-    s.Bind(AsAddr(a), static_cast<int>(sizeof(a)));
-    sockaddr_in bound{};
-    int len = static_cast<int>(sizeof(bound));
-    s.GetSockName(AsAddr(bound), &len);
-    return ntohs(bound.sin_port);
+    sockaddr_in sinAddr = Loopback();
+    objSocket.Bind(AsAddr(sinAddr), static_cast<int>(sizeof(sinAddr)));
+    sockaddr_in sinBound{};
+    int nLen = static_cast<int>(sizeof(sinBound));
+    objSocket.GetSockName(AsAddr(sinBound), &nLen);
+    return ntohs(sinBound.sin_port);
 }
 
-// Creates a connected TCP pair on loopback.
-void MakeTcpPair(CSocketSTL& listener, CSocketSTL& client, CSocketSTL& server)
+// Creates sinAddr connected TCP pair on loopback.
+void MakeTcpPair(CSocketSTL& objListener, CSocketSTL& objClient, CSocketSTL& objServer)
 {
-    listener.Create();
-    const unsigned short port = BindEphemeral(listener);
-    listener.Listen(5);
-    client.Create();
-    sockaddr_in a = Loopback(port);
-    client.Connect(AsAddr(a), static_cast<int>(sizeof(a)));
-    listener.Accept(server);
+    objListener.Create();
+    const unsigned short nPort = BindEphemeral(objListener);
+    objListener.Listen(5);
+    objClient.Create();
+    sockaddr_in sinAddr = Loopback(nPort);
+    objClient.Connect(AsAddr(sinAddr), static_cast<int>(sizeof(sinAddr)));
+    objListener.Accept(objServer);
 }
 }
 
@@ -100,25 +100,25 @@ void MakeTcpPair(CSocketSTL& listener, CSocketSTL& client, CSocketSTL& server)
 
 TEST(Exception_StoresErrorCode)
 {
-    CSocketException e(ECONNREFUSED);
-    CHECK(e._nError == ECONNREFUSED);
+    CSocketException ex(ECONNREFUSED);
+    CHECK(ex._nError == ECONNREFUSED);
 }
 
 TEST(Exception_MessageForKnownError)
 {
-    CSocketException e(ECONNREFUSED);
-    std::string msg;
-    CHECK(e.GetErrorMessage(msg));
-    CHECK(!msg.empty());
+    CSocketException ex(ECONNREFUSED);
+    std::string strMsg;
+    CHECK(ex.GetErrorMessage(strMsg));
+    CHECK(!strMsg.empty());
 }
 
 TEST(Exception_HelpContextIsZeroed)
 {
-    CSocketException e(EINVAL);
-    std::string msg;
-    unsigned int ctx = 123;
-    CHECK(e.GetErrorMessage(msg, &ctx));
-    CHECK(ctx == 0);
+    CSocketException ex(EINVAL);
+    std::string strMsg;
+    unsigned int nCtx = 123;
+    CHECK(ex.GetErrorMessage(strMsg, &nCtx));
+    CHECK(nCtx == 0);
 }
 
 TEST(Exception_IsStdException)
@@ -132,533 +132,533 @@ TEST(Exception_IsStdException)
 
 TEST(Socket_DefaultNotCreated)
 {
-    CSocketSTL s;
-    CHECK(!s.IsCreated());
+    CSocketSTL objSocket;
+    CHECK(!objSocket.IsCreated());
 }
 
 TEST(Socket_CreateTcpAndClose)
 {
-    CSocketSTL s;
-    s.Create();
-    CHECK(s.IsCreated());
-    s.Close();
-    CHECK(!s.IsCreated());
-    s.Close(); // idempotent
-    CHECK(!s.IsCreated());
+    CSocketSTL objSocket;
+    objSocket.Create();
+    CHECK(objSocket.IsCreated());
+    objSocket.Close();
+    CHECK(!objSocket.IsCreated());
+    objSocket.Close(); // idempotent
+    CHECK(!objSocket.IsCreated());
 }
 
 TEST(Socket_CreateUdpIPv4TypeIsDgram)
 {
-    CSocketSTL s;
-    s.Create(true, false);
-    int type = 0, len = static_cast<int>(sizeof(type));
-    s.GetSockOpt(SO_TYPE, &type, &len, SOL_SOCKET);
-    CHECK(type == SOCK_DGRAM);
+    CSocketSTL objSocket;
+    objSocket.Create(true, false);
+    int nType = 0, nLen = static_cast<int>(sizeof(nType));
+    objSocket.GetSockOpt(SO_TYPE, &nType, &nLen, SOL_SOCKET);
+    CHECK(nType == SOCK_DGRAM);
 }
 
 TEST(Socket_CreateTcpTypeIsStream)
 {
-    CSocketSTL s;
-    s.Create(false, false);
-    int type = 0, len = static_cast<int>(sizeof(type));
-    s.GetSockOpt(SO_TYPE, &type, &len, SOL_SOCKET);
-    CHECK(type == SOCK_STREAM);
+    CSocketSTL objSocket;
+    objSocket.Create(false, false);
+    int nType = 0, nLen = static_cast<int>(sizeof(nType));
+    objSocket.GetSockOpt(SO_TYPE, &nType, &nLen, SOL_SOCKET);
+    CHECK(nType == SOCK_STREAM);
 }
 
 TEST(Socket_CreateIPv6)
 {
-    CSocketSTL s;
-    try { s.Create(false, true); }
-    catch (const CSocketException& e) { if (e._nError == EAFNOSUPPORT) return; throw; }
-    sockaddr_in6 a{};
-    int len = static_cast<int>(sizeof(a));
+    CSocketSTL objSocket;
+    try { objSocket.Create(false, true); }
+    catch (const CSocketException& ex) { if (ex._nError == EAFNOSUPPORT) return; throw; }
+    sockaddr_in6 sinAddr{};
+    int nLen = static_cast<int>(sizeof(sinAddr));
     // unbound socket: family must still be AF_INET6
-    s.GetSockName(reinterpret_cast<SOCKADDR*>(&a), &len);
-    CHECK(a.sin6_family == AF_INET6);
+    objSocket.GetSockName(reinterpret_cast<SOCKADDR*>(&sinAddr), &nLen);
+    CHECK(sinAddr.sin6_family == AF_INET6);
 }
 
 TEST(Socket_CreateInvalidTypeThrows)
 {
-    CSocketSTL s;
-    CHECK_THROWS(s.Create(-1, 0, AF_INET));
-    CHECK(!s.IsCreated());
+    CSocketSTL objSocket;
+    CHECK_THROWS(objSocket.Create(-1, 0, AF_INET));
+    CHECK(!objSocket.IsCreated());
 }
 
 TEST(Socket_AttachDetach)
 {
-    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    CHECK(fd >= 0);
-    CSocketSTL s;
-    s.Attach(fd);
-    CHECK(s.IsCreated());
-    CHECK(s.Detach() == fd);
-    CHECK(!s.IsCreated());
-    CHECK(s.Detach() == -1);
-    ::close(fd);
+    const int nFd = ::socket(AF_INET, SOCK_STREAM, 0);
+    CHECK(nFd >= 0);
+    CSocketSTL objSocket;
+    objSocket.Attach(nFd);
+    CHECK(objSocket.IsCreated());
+    CHECK(objSocket.Detach() == nFd);
+    CHECK(!objSocket.IsCreated());
+    CHECK(objSocket.Detach() == -1);
+    ::close(nFd);
 }
 
 TEST(Socket_AttachClosesPrevious)
 {
-    const int fd1 = ::socket(AF_INET, SOCK_STREAM, 0);
-    const int fd2 = ::socket(AF_INET, SOCK_STREAM, 0);
-    CSocketSTL s;
-    s.Attach(fd1);
-    s.Attach(fd2);
-    CHECK(::fcntl(fd1, F_GETFD) == -1 && errno == EBADF);
-    CHECK(s.Detach() == fd2);
-    ::close(fd2);
+    const int nFd1 = ::socket(AF_INET, SOCK_STREAM, 0);
+    const int nFd2 = ::socket(AF_INET, SOCK_STREAM, 0);
+    CSocketSTL objSocket;
+    objSocket.Attach(nFd1);
+    objSocket.Attach(nFd2);
+    CHECK(::fcntl(nFd1, F_GETFD) == -1 && errno == EBADF);
+    CHECK(objSocket.Detach() == nFd2);
+    ::close(nFd2);
 }
 
 TEST(Socket_DestructorClosesSocket)
 {
-    int fd = -1;
+    int nFd = -1;
     {
-        CSocketSTL s;
-        s.Create();
-        fd = s.Detach();
-        s.Attach(fd);
+        CSocketSTL objSocket;
+        objSocket.Create();
+        nFd = objSocket.Detach();
+        objSocket.Attach(nFd);
     }
-    CHECK(::fcntl(fd, F_GETFD) == -1 && errno == EBADF);
+    CHECK(::fcntl(nFd, F_GETFD) == -1 && errno == EBADF);
 }
 
 TEST(Socket_BindAddressAccessors)
 {
-    CSocketSTL s;
-    CHECK(s.GetBindAddress().empty());
-    s.SetBindAddress("127.0.0.1");
-    CHECK(s.GetBindAddress() == "127.0.0.1");
+    CSocketSTL objSocket;
+    CHECK(objSocket.GetBindAddress().empty());
+    objSocket.SetBindAddress("127.0.0.1");
+    CHECK(objSocket.GetBindAddress() == "127.0.0.1");
 }
 
 // ---------------------------------------------------------------- options / ioctl
 
 TEST(Socket_SetGetSockOpt)
 {
-    CSocketSTL s;
-    s.Create();
-    int on = 1;
-    s.SetSockOpt(SO_REUSEADDR, &on, static_cast<int>(sizeof(on)), SOL_SOCKET);
-    int val = 0, len = static_cast<int>(sizeof(val));
-    s.GetSockOpt(SO_REUSEADDR, &val, &len, SOL_SOCKET);
-    CHECK(val != 0);
-    CHECK(len == static_cast<int>(sizeof(val)));
+    CSocketSTL objSocket;
+    objSocket.Create();
+    int nOn = 1;
+    objSocket.SetSockOpt(SO_REUSEADDR, &nOn, static_cast<int>(sizeof(nOn)), SOL_SOCKET);
+    int nVal = 0, nLen = static_cast<int>(sizeof(nVal));
+    objSocket.GetSockOpt(SO_REUSEADDR, &nVal, &nLen, SOL_SOCKET);
+    CHECK(nVal != 0);
+    CHECK(nLen == static_cast<int>(sizeof(nVal)));
 }
 
 TEST(Socket_SockOptOnInvalidSocketThrows)
 {
-    CSocketSTL s;
-    int v = 1, len = static_cast<int>(sizeof(v));
-    CHECK_THROWS_ERR(s.SetSockOpt(SO_REUSEADDR, &v, len, SOL_SOCKET), EBADF);
-    CHECK_THROWS_ERR(s.GetSockOpt(SO_REUSEADDR, &v, &len, SOL_SOCKET), EBADF);
+    CSocketSTL objSocket;
+    int nV = 1, nLen = static_cast<int>(sizeof(nV));
+    CHECK_THROWS_ERR(objSocket.SetSockOpt(SO_REUSEADDR, &nV, nLen, SOL_SOCKET), EBADF);
+    CHECK_THROWS_ERR(objSocket.GetSockOpt(SO_REUSEADDR, &nV, &nLen, SOL_SOCKET), EBADF);
 }
 
 TEST(Socket_IOCtlNonBlockingToggle)
 {
-    CSocketSTL s;
-    s.Create();
-    DWORD on = 1;
-    s.IOCtl(FIONBIO, &on);
-    int fd = s.Detach();
-    CHECK((::fcntl(fd, F_GETFL) & O_NONBLOCK) != 0);
-    s.Attach(fd);
-    DWORD off = 0;
-    s.IOCtl(FIONBIO, &off);
-    fd = s.Detach();
-    CHECK((::fcntl(fd, F_GETFL) & O_NONBLOCK) == 0);
-    s.Attach(fd);
+    CSocketSTL objSocket;
+    objSocket.Create();
+    DWORD dwOn = 1;
+    objSocket.IOCtl(FIONBIO, &dwOn);
+    int nFd = objSocket.Detach();
+    CHECK((::fcntl(nFd, F_GETFL) & O_NONBLOCK) != 0);
+    objSocket.Attach(nFd);
+    DWORD dwOff = 0;
+    objSocket.IOCtl(FIONBIO, &dwOff);
+    nFd = objSocket.Detach();
+    CHECK((::fcntl(nFd, F_GETFL) & O_NONBLOCK) == 0);
+    objSocket.Attach(nFd);
 }
 
 TEST(Socket_IOCtlNullArgumentThrows)
 {
-    CSocketSTL s;
-    s.Create();
-    CHECK_THROWS_ERR(s.IOCtl(FIONBIO, nullptr), EFAULT);
+    CSocketSTL objSocket;
+    objSocket.Create();
+    CHECK_THROWS_ERR(objSocket.IOCtl(FIONBIO, nullptr), EFAULT);
 }
 
 TEST(Socket_IOCtlInvalidSocketThrows)
 {
-    CSocketSTL s;
-    DWORD v = 1;
-    CHECK_THROWS_ERR(s.IOCtl(FIONBIO, &v), EBADF);
+    CSocketSTL objSocket;
+    DWORD dwV = 1;
+    CHECK_THROWS_ERR(objSocket.IOCtl(FIONBIO, &dwV), EBADF);
 }
 
 // ---------------------------------------------------------------- bind / names
 
 TEST(Socket_BindAndGetSockName)
 {
-    CSocketSTL s;
-    s.Create();
-    const unsigned short port = BindEphemeral(s);
-    CHECK(port != 0);
-    CSocketSTL::String addr;
-    UINT p = 0;
-    s.GetSockName(addr, p);
-    CHECK(addr == "127.0.0.1");
-    CHECK(p == port);
+    CSocketSTL objSocket;
+    objSocket.Create();
+    const unsigned short nPort = BindEphemeral(objSocket);
+    CHECK(nPort != 0);
+    CSocketSTL::String sAddr;
+    UINT nPeerPort = 0;
+    objSocket.GetSockName(sAddr, nPeerPort);
+    CHECK(sAddr == "127.0.0.1");
+    CHECK(nPeerPort == nPort);
 }
 
 TEST(Socket_BindInvalidArgumentsThrow)
 {
-    CSocketSTL s;
-    s.Create();
-    sockaddr_in a = Loopback();
-    CHECK_THROWS_ERR(s.Bind(nullptr, static_cast<int>(sizeof(a))), EINVAL);
-    CHECK_THROWS_ERR(s.Bind(AsAddr(a), 0), EINVAL);
+    CSocketSTL objSocket;
+    objSocket.Create();
+    sockaddr_in sinAddr = Loopback();
+    CHECK_THROWS_ERR(objSocket.Bind(nullptr, static_cast<int>(sizeof(sinAddr))), EINVAL);
+    CHECK_THROWS_ERR(objSocket.Bind(AsAddr(sinAddr), 0), EINVAL);
 }
 
 TEST(Socket_BindAddressInUseThrows)
 {
-    CSocketSTL a, b;
-    a.Create();
-    const unsigned short port = BindEphemeral(a);
-    b.Create();
-    sockaddr_in addr = Loopback(port);
-    CHECK_THROWS_ERR(b.Bind(AsAddr(addr), static_cast<int>(sizeof(addr))), EADDRINUSE);
+    CSocketSTL objA, objB;
+    objA.Create();
+    const unsigned short nPort = BindEphemeral(objA);
+    objB.Create();
+    sockaddr_in sinAddr = Loopback(nPort);
+    CHECK_THROWS_ERR(objB.Bind(AsAddr(sinAddr), static_cast<int>(sizeof(sinAddr))), EADDRINUSE);
 }
 
 TEST(Socket_GetPeerNameUnconnectedThrows)
 {
-    CSocketSTL s;
-    s.Create();
-    CSocketSTL::String addr;
-    UINT p = 0;
-    CHECK_THROWS_ERR(s.GetPeerName(addr, p), ENOTCONN);
+    CSocketSTL objSocket;
+    objSocket.Create();
+    CSocketSTL::String sAddr;
+    UINT nPeerPort = 0;
+    CHECK_THROWS_ERR(objSocket.GetPeerName(sAddr, nPeerPort), ENOTCONN);
 }
 
 TEST(Socket_CreateAndBindWildcardIPv4)
 {
-    CSocketSTL s;
-    s.CreateAndBind(0, SOCK_STREAM, AF_INET);
-    CHECK(s.IsCreated());
-    CSocketSTL::String addr;
-    UINT p = 0;
-    s.GetSockName(addr, p);
-    CHECK(addr == "0.0.0.0");
-    CHECK(p != 0);
+    CSocketSTL objSocket;
+    objSocket.CreateAndBind(0, SOCK_STREAM, AF_INET);
+    CHECK(objSocket.IsCreated());
+    CSocketSTL::String sAddr;
+    UINT nPeerPort = 0;
+    objSocket.GetSockName(sAddr, nPeerPort);
+    CHECK(sAddr == "0.0.0.0");
+    CHECK(nPeerPort != 0);
 }
 
 TEST(Socket_CreateAndBindUsesBindAddress)
 {
-    CSocketSTL s;
-    s.SetBindAddress("127.0.0.1");
-    s.CreateAndBind(0, SOCK_DGRAM, AF_INET);
-    CSocketSTL::String addr;
-    UINT p = 0;
-    s.GetSockName(addr, p);
-    CHECK(addr == "127.0.0.1");
+    CSocketSTL objSocket;
+    objSocket.SetBindAddress("127.0.0.1");
+    objSocket.CreateAndBind(0, SOCK_DGRAM, AF_INET);
+    CSocketSTL::String sAddr;
+    UINT nPeerPort = 0;
+    objSocket.GetSockName(sAddr, nPeerPort);
+    CHECK(sAddr == "127.0.0.1");
 }
 
 TEST(Socket_CreateAndBindPortTooLargeThrows)
 {
-    CSocketSTL s;
-    CHECK_THROWS_ERR(s.CreateAndBind(65536, SOCK_STREAM, AF_INET), EINVAL);
-    CHECK(!s.IsCreated());
+    CSocketSTL objSocket;
+    CHECK_THROWS_ERR(objSocket.CreateAndBind(65536, SOCK_STREAM, AF_INET), EINVAL);
+    CHECK(!objSocket.IsCreated());
 }
 
 TEST(Socket_CreateAndBindUnknownFamilyIsNoOp)
 {
-    CSocketSTL s;
-    s.CreateAndBind(0, SOCK_STREAM, AF_UNSPEC);
-    CHECK(!s.IsCreated());
+    CSocketSTL objSocket;
+    objSocket.CreateAndBind(0, SOCK_STREAM, AF_UNSPEC);
+    CHECK(!objSocket.IsCreated());
 }
 
 TEST(Socket_CreateAndBindBadHostThrows)
 {
-    CSocketSTL s;
-    s.SetBindAddress("999.999.999.999");
-    CHECK_THROWS(s.CreateAndBind(0, SOCK_STREAM, AF_INET));
+    CSocketSTL objSocket;
+    objSocket.SetBindAddress("999.999.999.999");
+    CHECK_THROWS(objSocket.CreateAndBind(0, SOCK_STREAM, AF_INET));
 }
 
 // ---------------------------------------------------------------- TCP
 
 TEST(Tcp_ConnectAcceptSendReceive)
 {
-    CSocketSTL listener, client, server;
-    MakeTcpPair(listener, client, server);
-    CHECK(server.IsCreated());
+    CSocketSTL objListener, objClient, objServer;
+    MakeTcpPair(objListener, objClient, objServer);
+    CHECK(objServer.IsCreated());
 
-    const char msg[] = "hello";
-    CHECK(client.Send(msg, 5) == 5);
-    CHECK(server.IsReadible(1000));
-    char buf[16]{};
-    CHECK(server.Receive(buf, sizeof(buf)) == 5);
-    CHECK(std::memcmp(buf, msg, 5) == 0);
+    const char strMsg[] = "hello";
+    CHECK(objClient.Send(strMsg, 5) == 5);
+    CHECK(objServer.IsReadible(1000));
+    char acBuf[16]{};
+    CHECK(objServer.Receive(acBuf, sizeof(acBuf)) == 5);
+    CHECK(std::memcmp(acBuf, strMsg, 5) == 0);
 
-    CHECK(server.Send("ok", 2) == 2);
-    CHECK(client.Receive(buf, sizeof(buf)) == 2);
+    CHECK(objServer.Send("bOk", 2) == 2);
+    CHECK(objClient.Receive(acBuf, sizeof(acBuf)) == 2);
 }
 
 TEST(Tcp_PeerAndSockNames)
 {
-    CSocketSTL listener, client, server;
-    MakeTcpPair(listener, client, server);
+    CSocketSTL objListener, objClient, objServer;
+    MakeTcpPair(objListener, objClient, objServer);
 
-    CSocketSTL::String addr;
-    UINT cport = 0, sport = 0;
-    client.GetSockName(addr, cport);
-    CHECK(addr == "127.0.0.1");
-    server.GetPeerName(addr, sport);
-    CHECK(addr == "127.0.0.1");
-    CHECK(sport == cport);
+    CSocketSTL::String sAddr;
+    UINT nClientPort = 0, nServerPort = 0;
+    objClient.GetSockName(sAddr, nClientPort);
+    CHECK(sAddr == "127.0.0.1");
+    objServer.GetPeerName(sAddr, nServerPort);
+    CHECK(sAddr == "127.0.0.1");
+    CHECK(nServerPort == nClientPort);
 }
 
 TEST(Tcp_AcceptFillsAddress)
 {
-    CSocketSTL listener, client;
-    listener.Create();
-    const unsigned short port = BindEphemeral(listener);
-    listener.Listen(1);
-    client.Create();
-    sockaddr_in target = Loopback(port);
-    client.Connect(AsAddr(target), static_cast<int>(sizeof(target)));
+    CSocketSTL objListener, objClient;
+    objListener.Create();
+    const unsigned short nPort = BindEphemeral(objListener);
+    objListener.Listen(1);
+    objClient.Create();
+    sockaddr_in sinTarget = Loopback(nPort);
+    objClient.Connect(AsAddr(sinTarget), static_cast<int>(sizeof(sinTarget)));
 
-    CSocketSTL server;
-    sockaddr_in peer{};
-    int len = static_cast<int>(sizeof(peer));
-    listener.Accept(server, AsAddr(peer), &len);
-    CHECK(len == static_cast<int>(sizeof(peer)));
-    CHECK(peer.sin_family == AF_INET);
-    CHECK(peer.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
+    CSocketSTL objServer;
+    sockaddr_in sinPeer{};
+    int nLen = static_cast<int>(sizeof(sinPeer));
+    objListener.Accept(objServer, AsAddr(sinPeer), &nLen);
+    CHECK(nLen == static_cast<int>(sizeof(sinPeer)));
+    CHECK(sinPeer.sin_family == AF_INET);
+    CHECK(sinPeer.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
 }
 
 TEST(Tcp_ConnectInvalidArgumentsThrow)
 {
-    CSocketSTL s;
-    s.Create();
-    sockaddr_in a = Loopback(1);
-    CHECK_THROWS_ERR(s.Connect(nullptr, static_cast<int>(sizeof(a))), EINVAL);
-    CHECK_THROWS_ERR(s.Connect(AsAddr(a), 0), EINVAL);
+    CSocketSTL objSocket;
+    objSocket.Create();
+    sockaddr_in sinAddr = Loopback(1);
+    CHECK_THROWS_ERR(objSocket.Connect(nullptr, static_cast<int>(sizeof(sinAddr))), EINVAL);
+    CHECK_THROWS_ERR(objSocket.Connect(AsAddr(sinAddr), 0), EINVAL);
 }
 
 TEST(Tcp_ConnectRefusedThrows)
 {
-    // Obtain a port that is certainly closed: bind, then close.
-    unsigned short port;
+    // Obtain sinAddr nPort that is certainly closed: bind, then close.
+    unsigned short nPort;
     {
-        CSocketSTL tmp;
-        tmp.Create();
-        port = BindEphemeral(tmp);
+        CSocketSTL objTmp;
+        objTmp.Create();
+        nPort = BindEphemeral(objTmp);
     }
-    CSocketSTL s;
-    s.Create();
-    sockaddr_in a = Loopback(port);
-    CHECK_THROWS_ERR(s.Connect(AsAddr(a), static_cast<int>(sizeof(a))), ECONNREFUSED);
+    CSocketSTL objSocket;
+    objSocket.Create();
+    sockaddr_in sinAddr = Loopback(nPort);
+    CHECK_THROWS_ERR(objSocket.Connect(AsAddr(sinAddr), static_cast<int>(sizeof(sinAddr))), ECONNREFUSED);
 }
 
 TEST(Tcp_ListenNegativeBacklogUsesDefault)
 {
-    CSocketSTL s;
-    s.Create();
-    BindEphemeral(s);
-    s.Listen(-1);
-    s.Listen(0);
+    CSocketSTL objSocket;
+    objSocket.Create();
+    BindEphemeral(objSocket);
+    objSocket.Listen(-1);
+    objSocket.Listen(0);
 }
 
 TEST(Tcp_ListenInvalidSocketThrows)
 {
-    CSocketSTL s;
-    CHECK_THROWS_ERR(s.Listen(1), EBADF);
+    CSocketSTL objSocket;
+    CHECK_THROWS_ERR(objSocket.Listen(1), EBADF);
 }
 
 TEST(Tcp_AcceptNonBlockingNoPendingThrows)
 {
-    CSocketSTL s;
-    s.Create();
-    BindEphemeral(s);
-    s.Listen(1);
-    DWORD on = 1;
-    s.IOCtl(FIONBIO, &on);
-    CSocketSTL c;
+    CSocketSTL objSocket;
+    objSocket.Create();
+    BindEphemeral(objSocket);
+    objSocket.Listen(1);
+    DWORD dwOn = 1;
+    objSocket.IOCtl(FIONBIO, &dwOn);
+    CSocketSTL objC;
     bool bThrown = false;
-    try { s.Accept(c); } catch (const CSocketException& e) { bThrown = (e._nError == EAGAIN || e._nError == EWOULDBLOCK); }
+    try { objSocket.Accept(objC); } catch (const CSocketException& ex) { bThrown = (ex._nError == EAGAIN || ex._nError == EWOULDBLOCK); }
     CHECK(bThrown);
-    CHECK(!c.IsCreated());
+    CHECK(!objC.IsCreated());
 }
 
 TEST(Tcp_ReceiveInvalidArgumentsThrow)
 {
-    CSocketSTL listener, client, server;
-    MakeTcpPair(listener, client, server);
-    char buf[4];
-    CHECK_THROWS_ERR(server.Receive(nullptr, 4), EINVAL);
-    CHECK_THROWS_ERR(server.Receive(buf, -1), EINVAL);
+    CSocketSTL objListener, objClient, objServer;
+    MakeTcpPair(objListener, objClient, objServer);
+    char acBuf[4];
+    CHECK_THROWS_ERR(objServer.Receive(nullptr, 4), EINVAL);
+    CHECK_THROWS_ERR(objServer.Receive(acBuf, -1), EINVAL);
 }
 
 TEST(Tcp_ReceiveReturnsZeroOnPeerClose)
 {
-    CSocketSTL listener, client, server;
-    MakeTcpPair(listener, client, server);
-    client.Close();
-    char buf[4];
-    CHECK(server.Receive(buf, sizeof(buf)) == 0);
+    CSocketSTL objListener, objClient, objServer;
+    MakeTcpPair(objListener, objClient, objServer);
+    objClient.Close();
+    char acBuf[4];
+    CHECK(objServer.Receive(acBuf, sizeof(acBuf)) == 0);
 }
 
 TEST(Tcp_ShutDownModes)
 {
-    CSocketSTL listener, client, server;
-    MakeTcpPair(listener, client, server);
-    client.ShutDown(1);
-    char buf[4];
-    CHECK(server.Receive(buf, sizeof(buf)) == 0); // EOF after send-side shutdown
-    CHECK_THROWS_ERR(client.Send("x", 1), EPIPE);
-    server.ShutDown(2);
+    CSocketSTL objListener, objClient, objServer;
+    MakeTcpPair(objListener, objClient, objServer);
+    objClient.ShutDown(1);
+    char acBuf[4];
+    CHECK(objServer.Receive(acBuf, sizeof(acBuf)) == 0); // EOF after send-side shutdown
+    CHECK_THROWS_ERR(objClient.Send("x", 1), EPIPE);
+    objServer.ShutDown(2);
 }
 
 TEST(Tcp_ShutDownInvalidHowThrows)
 {
-    CSocketSTL listener, client, server;
-    MakeTcpPair(listener, client, server);
-    CHECK_THROWS_ERR(client.ShutDown(-1), EINVAL);
-    CHECK_THROWS_ERR(client.ShutDown(3), EINVAL);
+    CSocketSTL objListener, objClient, objServer;
+    MakeTcpPair(objListener, objClient, objServer);
+    CHECK_THROWS_ERR(objClient.ShutDown(-1), EINVAL);
+    CHECK_THROWS_ERR(objClient.ShutDown(3), EINVAL);
 }
 
 TEST(Tcp_ShutDownNotConnectedThrows)
 {
-    CSocketSTL s;
-    s.Create();
-    CHECK_THROWS_ERR(s.ShutDown(2), ENOTCONN);
+    CSocketSTL objSocket;
+    objSocket.Create();
+    CHECK_THROWS_ERR(objSocket.ShutDown(2), ENOTCONN);
 }
 
 TEST(Tcp_SendOnInvalidSocketThrows)
 {
-    CSocketSTL s;
-    CHECK_THROWS_ERR(s.Send("x", 1), EBADF);
+    CSocketSTL objSocket;
+    CHECK_THROWS_ERR(objSocket.Send("x", 1), EBADF);
 }
 
 TEST(Tcp_IsReadibleTimesOutWhenIdle)
 {
-    CSocketSTL listener, client, server;
-    MakeTcpPair(listener, client, server);
-    CHECK(!server.IsReadible(10));
-    CHECK(client.IsWritable(10));
+    CSocketSTL objListener, objClient, objServer;
+    MakeTcpPair(objListener, objClient, objServer);
+    CHECK(!objServer.IsReadible(10));
+    CHECK(objClient.IsWritable(10));
 }
 
 TEST(Poll_UncreatedSocketIsNeverReady)
 {
     // poll() ignores negative descriptors, so an uncreated socket simply times out.
-    CSocketSTL s;
-    CHECK(!s.IsReadible(0));
-    CHECK(!s.IsWritable(0));
+    CSocketSTL objSocket;
+    CHECK(!objSocket.IsReadible(0));
+    CHECK(!objSocket.IsWritable(0));
 }
 
 TEST(Poll_StaleDescriptorThrows)
 {
-    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    ::close(fd);
-    CSocketSTL s;
-    s.Attach(fd);
-    CHECK_THROWS_ERR((void)s.IsReadible(0), EBADF);
-    CHECK_THROWS_ERR((void)s.IsWritable(0), EBADF);
-    (void)s.Detach();
+    const int nFd = ::socket(AF_INET, SOCK_STREAM, 0);
+    ::close(nFd);
+    CSocketSTL objSocket;
+    objSocket.Attach(nFd);
+    CHECK_THROWS_ERR((void)objSocket.IsReadible(0), EBADF);
+    CHECK_THROWS_ERR((void)objSocket.IsWritable(0), EBADF);
+    (void)objSocket.Detach();
 }
 
 // ---------------------------------------------------------------- UDP
 
 TEST(Udp_SendToReceiveFromRawAddress)
 {
-    CSocketSTL rx, tx;
-    rx.Create(true);
-    const unsigned short port = BindEphemeral(rx);
-    tx.Create(true);
+    CSocketSTL objRx, objTx;
+    objRx.Create(true);
+    const unsigned short nPort = BindEphemeral(objRx);
+    objTx.Create(true);
 
-    sockaddr_in dst = Loopback(port);
-    const char msg[] = "datagram";
-    CHECK(tx.SendTo(msg, 8, AsAddr(dst), static_cast<int>(sizeof(dst))) == 8);
-    CHECK(rx.IsReadible(1000));
+    sockaddr_in sinDst = Loopback(nPort);
+    const char strMsg[] = "datagram";
+    CHECK(objTx.SendTo(strMsg, 8, AsAddr(sinDst), static_cast<int>(sizeof(sinDst))) == 8);
+    CHECK(objRx.IsReadible(1000));
 
-    char buf[32]{};
-    sockaddr_in from{};
-    int len = static_cast<int>(sizeof(from));
-    CHECK(rx.ReceiveFrom(buf, sizeof(buf), AsAddr(from), &len) == 8);
-    CHECK(std::memcmp(buf, msg, 8) == 0);
-    CHECK(from.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
-    CHECK(len == static_cast<int>(sizeof(from)));
+    char acBuf[32]{};
+    sockaddr_in sinFrom{};
+    int nLen = static_cast<int>(sizeof(sinFrom));
+    CHECK(objRx.ReceiveFrom(acBuf, sizeof(acBuf), AsAddr(sinFrom), &nLen) == 8);
+    CHECK(std::memcmp(acBuf, strMsg, 8) == 0);
+    CHECK(sinFrom.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
+    CHECK(nLen == static_cast<int>(sizeof(sinFrom)));
 }
 
 TEST(Udp_SendToHostStringAndReceiveFromString)
 {
-    CSocketSTL rx, tx;
-    rx.Create(true);
-    const unsigned short port = BindEphemeral(rx);
-    tx.Create(true);
+    CSocketSTL objRx, objTx;
+    objRx.Create(true);
+    const unsigned short nPort = BindEphemeral(objRx);
+    objTx.Create(true);
 
-    CHECK(tx.SendTo("abc", 3, port, "127.0.0.1") == 3);
-    CHECK(rx.IsReadible(1000));
+    CHECK(objTx.SendTo("abc", 3, nPort, "127.0.0.1") == 3);
+    CHECK(objRx.IsReadible(1000));
 
-    char buf[8]{};
-    CSocketSTL::String addr;
-    UINT srcPort = 0;
-    CHECK(rx.ReceiveFrom(buf, sizeof(buf), addr, srcPort) == 3);
-    CHECK(addr == "127.0.0.1");
-    CHECK(srcPort != 0);
-    CHECK(std::string(buf, 3) == "abc");
+    char acBuf[8]{};
+    CSocketSTL::String sAddr;
+    UINT nSrcPort = 0;
+    CHECK(objRx.ReceiveFrom(acBuf, sizeof(acBuf), sAddr, nSrcPort) == 3);
+    CHECK(sAddr == "127.0.0.1");
+    CHECK(nSrcPort != 0);
+    CHECK(std::string(acBuf, 3) == "abc");
 }
 
 TEST(Udp_ReceiveFromWithoutAddressBuffer)
 {
-    CSocketSTL rx, tx;
-    rx.Create(true);
-    const unsigned short port = BindEphemeral(rx);
-    tx.Create(true);
-    CHECK(tx.SendTo("z", 1, port, "127.0.0.1") == 1);
-    CHECK(rx.IsReadible(1000));
-    char buf[4];
-    CHECK(rx.ReceiveFrom(buf, sizeof(buf), nullptr, nullptr) == 1);
+    CSocketSTL objRx, objTx;
+    objRx.Create(true);
+    const unsigned short nPort = BindEphemeral(objRx);
+    objTx.Create(true);
+    CHECK(objTx.SendTo("z", 1, nPort, "127.0.0.1") == 1);
+    CHECK(objRx.IsReadible(1000));
+    char acBuf[4];
+    CHECK(objRx.ReceiveFrom(acBuf, sizeof(acBuf), nullptr, nullptr) == 1);
 }
 
 TEST(Udp_SendToInvalidArgumentsThrow)
 {
-    CSocketSTL s;
-    s.Create(true);
-    sockaddr_in a = Loopback(9);
-    const int al = static_cast<int>(sizeof(a));
-    CHECK_THROWS_ERR(s.SendTo(nullptr, 1, AsAddr(a), al), EINVAL);
-    CHECK_THROWS_ERR(s.SendTo("x", -1, AsAddr(a), al), EINVAL);
-    CHECK_THROWS_ERR(s.SendTo("x", 1, nullptr, al), EINVAL);
-    CHECK_THROWS_ERR(s.SendTo("x", 1, AsAddr(a), 0), EINVAL);
-    CHECK_THROWS_ERR(s.SendTo("x", 1, 65536u, "127.0.0.1"), EINVAL);
+    CSocketSTL objSocket;
+    objSocket.Create(true);
+    sockaddr_in sinAddr = Loopback(9);
+    const int nAddrLen = static_cast<int>(sizeof(sinAddr));
+    CHECK_THROWS_ERR(objSocket.SendTo(nullptr, 1, AsAddr(sinAddr), nAddrLen), EINVAL);
+    CHECK_THROWS_ERR(objSocket.SendTo("x", -1, AsAddr(sinAddr), nAddrLen), EINVAL);
+    CHECK_THROWS_ERR(objSocket.SendTo("x", 1, nullptr, nAddrLen), EINVAL);
+    CHECK_THROWS_ERR(objSocket.SendTo("x", 1, AsAddr(sinAddr), 0), EINVAL);
+    CHECK_THROWS_ERR(objSocket.SendTo("x", 1, 65536u, "127.0.0.1"), EINVAL);
 }
 
 TEST(Udp_SendToUnresolvableHostThrows)
 {
-    CSocketSTL s;
-    s.Create(true);
-    CHECK_THROWS(s.SendTo("x", 1, 9, "999.999.999.999"));
+    CSocketSTL objSocket;
+    objSocket.Create(true);
+    CHECK_THROWS(objSocket.SendTo("x", 1, 9, "999.999.999.999"));
 }
 
 TEST(Udp_ReceiveFromInvalidArgumentsThrow)
 {
-    CSocketSTL s;
-    s.Create(true);
-    char buf[4];
-    CHECK_THROWS_ERR(s.ReceiveFrom(nullptr, 4, nullptr, nullptr), EINVAL);
-    CHECK_THROWS_ERR(s.ReceiveFrom(buf, -1, nullptr, nullptr), EINVAL);
+    CSocketSTL objSocket;
+    objSocket.Create(true);
+    char acBuf[4];
+    CHECK_THROWS_ERR(objSocket.ReceiveFrom(nullptr, 4, nullptr, nullptr), EINVAL);
+    CHECK_THROWS_ERR(objSocket.ReceiveFrom(acBuf, -1, nullptr, nullptr), EINVAL);
 }
 
 TEST(Udp_ReceiveFromNonBlockingEmptyThrows)
 {
-    CSocketSTL s;
-    s.Create(true);
-    BindEphemeral(s);
-    DWORD on = 1;
-    s.IOCtl(FIONBIO, &on);
-    char buf[4];
+    CSocketSTL objSocket;
+    objSocket.Create(true);
+    BindEphemeral(objSocket);
+    DWORD dwOn = 1;
+    objSocket.IOCtl(FIONBIO, &dwOn);
+    char acBuf[4];
     bool bThrown = false;
-    try { (void)s.ReceiveFrom(buf, sizeof(buf), nullptr, nullptr); }
-    catch (const CSocketException& e) { bThrown = (e._nError == EAGAIN || e._nError == EWOULDBLOCK); }
+    try { (void)objSocket.ReceiveFrom(acBuf, sizeof(acBuf), nullptr, nullptr); }
+    catch (const CSocketException& ex) { bThrown = (ex._nError == EAGAIN || ex._nError == EWOULDBLOCK); }
     CHECK(bThrown);
 }
 
 int main()
 {
     int nFailedTests = 0;
-    for (const auto& t : Registry())
+    for (const auto& testCase : Registry())
     {
-        const int before = g_nFailures;
-        try { t.body(); }
-        catch (const std::exception& e) { ++g_nFailures; std::cerr << "    unexpected exception: " << e.what() << "\n"; }
-        const bool ok = (g_nFailures == before);
-        if (!ok) ++nFailedTests;
-        std::cout << (ok ? "[  OK  ] " : "[ FAIL ] ") << t.name << "\n";
+        const int nBefore = g_nFailures;
+        try { testCase.fnBody(); }
+        catch (const std::exception& ex) { ++g_nFailures; std::cerr << "    unexpected exception: " << ex.what() << "\n"; }
+        const bool bOk = (g_nFailures == nBefore);
+        if (!bOk) ++nFailedTests;
+        std::cout << (bOk ? "[  OK  ] " : "[ FAIL ] ") << testCase.pszName << "\n";
     }
     std::cout << Registry().size() - static_cast<size_t>(nFailedTests) << "/" << Registry().size() << " tests passed\n";
     return nFailedTests == 0 ? 0 : 1;
