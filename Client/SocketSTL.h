@@ -324,7 +324,7 @@ public:
 	 * @return number of bytes sent
 	 * @throws CSocketException if the port is invalid, resolution fails, or every address fails
 	 */
-	int SendTo( const void* pBuffer, int nBufLen, UINT nHostPort, const String& strHostAddress, int nFlags = 0) const;
+	int SendTo(const void* pBuffer, int nBufLen, UINT nHostPort, const String& strHostAddress, int nFlags = 0) const;
 
 protected:
     // Member variables

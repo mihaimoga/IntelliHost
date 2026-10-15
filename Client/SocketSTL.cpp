@@ -737,16 +737,16 @@ void CSocketSTL::ShutDown(const int nHow) const
 /**
  * Receives data from a connected socket.
  *
- * @param pBuf    destination buffer.
+ * @param pBuffer    destination buffer.
  * @param nBufLen buffer capacity in bytes.
  * @param nFlags  recv() flags.
  * @return number of bytes received (0 = peer closed the connection).
  * @throws CSocketException on invalid arguments or failure.
  */
-int CSocketSTL::Receive(void* pBuf, const int nBufLen, const int nFlags) const
+int CSocketSTL::Receive(void* pBuffer, const int nBufLen, const int nFlags) const
 {
 	// Validate arguments
-	if (pBuf == nullptr || nBufLen < 0)
+	if (pBuffer == nullptr || nBufLen < 0)
 		throw CSocketException(
 #if defined(_WIN32)
 			WSAEINVAL
@@ -756,14 +756,14 @@ int CSocketSTL::Receive(void* pBuf, const int nBufLen, const int nFlags) const
 		);
 
 #if defined(_WIN32)
-	const int nReceived{ ::recv(m_hSocket, static_cast<char*>(pBuf), nBufLen, nFlags) };
+	const int nReceived{ ::recv(m_hSocket, static_cast<char*>(pBuffer), nBufLen, nFlags) };
 	if (nReceived == SOCKET_ERROR)
 		throw CSocketException(LastSocketError());
 #else
 	ssize_t nResult; // retry when interrupted by a signal
 	do
 	{
-		nResult = ::recv(m_hSocket, pBuf, static_cast<size_t>(nBufLen), nFlags);
+		nResult = ::recv(m_hSocket, pBuffer, static_cast<size_t>(nBufLen), nFlags);
 	} while (nResult < 0 && errno == EINTR);
 	if (nResult < 0)
 		throw CSocketException(LastSocketError());
@@ -784,7 +784,7 @@ int CSocketSTL::Receive(void* pBuf, const int nBufLen, const int nFlags) const
  * @return number of bytes received.
  * @throws CSocketException on invalid arguments or failure.
  */
-int CSocketSTL::ReceiveFrom(void* pBuffer, int nBufLen, SOCKADDR* pSockAddr, int* pSockAddrLen, int nFlags) const
+int CSocketSTL::ReceiveFrom(void* pBuffer, const int nBufLen, SOCKADDR* pSockAddr, int* pSockAddrLen, int nFlags) const
 {
 	if (pBuffer == nullptr || nBufLen < 0)
 		throw CSocketException(
@@ -856,7 +856,7 @@ int CSocketSTL::ReceiveFrom(void* pBuffer, const int nBufLen, String& strSocketA
  * @return number of bytes actually sent.
  * @throws CSocketException on failure.
  */
-int CSocketSTL::Send(const void* pBuffer, int nBufLen, int nFlags) const
+int CSocketSTL::Send(const void* pBuffer, const int nBufLen, int nFlags) const
 {
 #if defined(_WIN32)
 	const int nSent{ ::send(m_hSocket, static_cast<const char*>(pBuffer), nBufLen, nFlags) };
@@ -889,7 +889,7 @@ int CSocketSTL::Send(const void* pBuffer, int nBufLen, int nFlags) const
  * @return number of bytes actually sent.
  * @throws CSocketException on invalid arguments or failure.
  */
-int CSocketSTL::SendTo(const void* pBuffer, int nBufLen, const SOCKADDR* pSockAddr, int nSockAddrLen, int nFlags) const
+int CSocketSTL::SendTo(const void* pBuffer, const int nBufLen, const SOCKADDR* pSockAddr, int nSockAddrLen, int nFlags) const
 {
 	if (pBuffer == nullptr || nBufLen < 0 || pSockAddr == nullptr || nSockAddrLen <= 0)
 		throw CSocketException(
@@ -931,7 +931,7 @@ int CSocketSTL::SendTo(const void* pBuffer, int nBufLen, const SOCKADDR* pSockAd
  * @return number of bytes actually sent.
  * @throws CSocketException on invalid port, resolution failure or send failure.
  */
-int CSocketSTL::SendTo(const void* pBuffer, int nBufLen, UINT nHostPort, const String& strHostAddress, int nFlags) const
+int CSocketSTL::SendTo(const void* pBuffer, const int nBufLen, const UINT nHostPort, const String& strHostAddress, const int nFlags) const
 {
 	if (nHostPort > 65535)
 		throw CSocketException(
