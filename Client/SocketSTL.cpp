@@ -46,9 +46,10 @@ namespace
 	int LastSocketError() noexcept { return errno; }
 #endif
 
+	// Converts a sockaddr_storage (IPv4/IPv6) to a printable address and host-order port
 	void FormatAddress(const sockaddr_storage& sockAddr, std::string& sAddress, UINT& nPort)
 	{
-		char szAddress[INET6_ADDRSTRLEN]{};
+		char szAddress[INET6_ADDRSTRLEN]{}; // large enough for either family
 		if (sockAddr.ss_family == AF_INET)
 		{
 			const auto* pAddr = reinterpret_cast<const sockaddr_in*>(&sockAddr);
@@ -64,7 +65,7 @@ namespace
 			nPort = ntohs(pAddr->sin6_port);
 		}
 		else
-			throw CSocketException(AF_UNSPEC);
+			throw CSocketException(AF_UNSPEC); // unsupported address family
 		sAddress = szAddress;
 	}
 
@@ -72,6 +73,7 @@ namespace
 	// so that the following recv/send reports the actual condition.
 	bool PollSocket(SOCKET hSocket, short nEvents, const DWORD dwTimeout)
 	{
+		// poll() takes an int, so clamp large timeouts
 		const int nTimeout{ dwTimeout > static_cast<DWORD>(INT_MAX) ? INT_MAX : static_cast<int>(dwTimeout) };
 #if defined(_WIN32)
 		WSAPOLLFD pfd{};
@@ -93,8 +95,8 @@ namespace
 			throw CSocketException(LastSocketError());
 #endif
 		if (nStatus == 0)
-			return false;
-		if ((pfd.revents & POLLNVAL) != 0)
+			return false; // timed out
+		if ((pfd.revents & POLLNVAL) != 0) // handle is not an open socket
 			throw CSocketException(
 #if defined(_WIN32)
 				WSAENOTSOCK
@@ -106,17 +108,19 @@ namespace
 	}
 }
 
+// Stores the platform error code (errno / WSAGetLastError / getaddrinfo result)
 CSocketException::CSocketException(int nError) noexcept : m_nError{ nError }
 {
 }
 
+// Fills strError with the system's text for m_nError; returns false if none is available
 bool CSocketException::GetErrorMessage(std::string& strError, unsigned int* pnHelpContext) const
 {
     if (pnHelpContext != nullptr)
         *pnHelpContext = 0;
 
 #if defined(_WIN32)
-    LPSTR pMessageBuffer = nullptr;
+    LPSTR pMessageBuffer = nullptr; // allocated by FormatMessageA, freed with LocalFree
     const DWORD nLength = ::FormatMessageA(
         FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
         nullptr,
@@ -134,6 +138,7 @@ bool CSocketException::GetErrorMessage(std::string& strError, unsigned int* pnHe
     strError.assign(pMessageBuffer, nLength);
     ::LocalFree(pMessageBuffer);
 
+    // Strip the trailing CR/LF that FormatMessage appends
     while (!strError.empty() && (strError.back() == '\r' || strError.back() == '\n'))
         strError.pop_back();
 
@@ -142,6 +147,7 @@ bool CSocketException::GetErrorMessage(std::string& strError, unsigned int* pnHe
     char szMessage[256]{};
 
 #if defined(__GLIBC__) && defined(_GNU_SOURCE)
+    // GNU strerror_r returns a char* (which may not point into szMessage)
     const char* pszMessage = ::strerror_r(m_nError, szMessage, sizeof(szMessage));
     if (pszMessage == nullptr) {
         strError.clear();
@@ -150,6 +156,7 @@ bool CSocketException::GetErrorMessage(std::string& strError, unsigned int* pnHe
 
     strError = pszMessage;
 #else
+    // XSI strerror_r returns 0 on success
     if (::strerror_r(m_nError, szMessage, sizeof(szMessage)) != 0) {
         strError.clear();
         return false;
@@ -175,6 +182,7 @@ namespace
 	};
 #endif
 
+	// Triggers one-time Winsock startup (no-op on Linux)
 	void EnsureSocketsInitialized() noexcept
 	{
 #if defined(_WIN32)
@@ -183,6 +191,7 @@ namespace
 	}
 }
 
+// Starts without a socket; makes sure the socket subsystem is initialized
 CSocketSTL::CSocketSTL() noexcept : m_hSocket{ INVALID_SOCKET }
 {
 	EnsureSocketsInitialized();
@@ -196,6 +205,7 @@ CSocketSTL::~CSocketSTL() noexcept
 
 void CSocketSTL::Close() noexcept
 {
+    // Reset the handle afterwards so repeated calls are harmless
     if (m_hSocket != INVALID_SOCKET)
     {
 #if defined(_WIN32)
@@ -209,6 +219,7 @@ void CSocketSTL::Close() noexcept
 
 void CSocketSTL::Attach(SOCKET hSocket) noexcept
 {
+    // Release any socket we already own before taking the new one
     if (m_hSocket != INVALID_SOCKET)
         Close();
     m_hSocket = hSocket;
@@ -216,6 +227,7 @@ void CSocketSTL::Attach(SOCKET hSocket) noexcept
 
 SOCKET CSocketSTL::Detach() noexcept
 {
+    // Hand the handle to the caller without closing it
     const SOCKET socket{ m_hSocket };
     m_hSocket = INVALID_SOCKET;
     return socket;
@@ -223,11 +235,13 @@ SOCKET CSocketSTL::Detach() noexcept
 
 void CSocketSTL::GetPeerName(String& sPeerAddress, UINT& nPeerPort, int /*nAddressToStringFlags*/) const
 {
+	// sockaddr_storage can hold both IPv4 and IPv6 addresses
 	sockaddr_storage sockAddr{};
 	int nSockAddrLen{ static_cast<int>(sizeof(sockAddr)) };
 	GetPeerName(reinterpret_cast<SOCKADDR*>(&sockAddr), &nSockAddrLen);
 	std::string sAddress;
 	FormatAddress(sockAddr, sAddress, nPeerPort);
+	// Widen to String (wstring when _UNICODE)
 	sPeerAddress.assign(sAddress.begin(), sAddress.end());
 }
 
@@ -243,6 +257,7 @@ void CSocketSTL::GetSockName(String& sSocketAddress, UINT& nSocketPort, int /*nA
 
 void CSocketSTL::GetPeerName(SOCKADDR* pSockAddr, int* pSockAddrLen) const
 {
+	// Use the platform's length type, then copy the result back as int
 	SockLen nLen{ static_cast<SockLen>(*pSockAddrLen) };
 	if (getpeername(m_hSocket, pSockAddr, &nLen) != 0)
 		throw CSocketException(LastSocketError());
@@ -265,7 +280,7 @@ void CSocketSTL::SetSockOpt(int nOptionName, const void* pOptionValue, int nOpti
 
 void CSocketSTL::GetSockOpt(int nOptionName, void* pOptionValue, int* pOptionLen, int nLevel) const
 {
-	SockLen nLen{ static_cast<SockLen>(*pOptionLen) };
+	SockLen nLen{ static_cast<SockLen>(*pOptionLen) }; // in: buffer size, out: bytes written
 	if (getsockopt(m_hSocket, nLevel, nOptionName, static_cast<char*>(pOptionValue), &nLen) != 0)
 		throw CSocketException(LastSocketError());
 	*pOptionLen = static_cast<int>(nLen);
@@ -278,22 +293,24 @@ bool CSocketSTL::IsCreated() const noexcept
 
 bool CSocketSTL::IsReadible(const DWORD dwTimeout) const
 {
-	return PollSocket(m_hSocket, POLLIN, dwTimeout);
+	return PollSocket(m_hSocket, POLLIN, dwTimeout); // POLLIN: data (or a pending connection) is available
 }
 
 bool CSocketSTL::IsWritable(const DWORD dwTimeout) const
 {
-	return PollSocket(m_hSocket, POLLOUT, dwTimeout);
+	return PollSocket(m_hSocket, POLLOUT, dwTimeout); // POLLOUT: a send will not block
 }
 
 
 void CSocketSTL::Create(bool bUDP, bool bIPv6)
 {
+	// Datagram for UDP, stream for TCP; protocol 0 picks the default for the type
 	Create(bUDP ? SOCK_DGRAM : SOCK_STREAM, 0, bIPv6 ? AF_INET6 : PF_INET);
 }
 
 void CSocketSTL::Create(const int nSocketType, const int nProtocolType, const int nAddressFormat)
 {
+	// Note: overwrites m_hSocket without closing a previous handle
 	m_hSocket = ::socket(nAddressFormat, nSocketType, nProtocolType);
 	if (m_hSocket == INVALID_SOCKET)
 		throw CSocketException(LastSocketError());
@@ -301,6 +318,7 @@ void CSocketSTL::Create(const int nSocketType, const int nProtocolType, const in
 
 void CSocketSTL::Connect(const SOCKADDR* pSockAddr, const int nSockAddrLen) const
 {
+	// Reject a missing or empty address
 	if (pSockAddr == nullptr || nSockAddrLen <= 0)
 		throw CSocketException(
 #if defined(_WIN32)
@@ -377,6 +395,7 @@ void CSocketSTL::Accept(CSocketSTL& connectedSocket, SOCKADDR* pSockAddr, int* p
 
 void CSocketSTL::CreateAndBind(const UINT nSocketPort, const int nSocketType, const int nDefaultAddressFormat)
 {
+	// Ports are 16-bit
 	if (nSocketPort > 65535)
 		throw CSocketException(
 #if defined(_WIN32)
@@ -393,22 +412,24 @@ void CSocketSTL::CreateAndBind(const UINT nSocketPort, const int nSocketType, co
 		sBindAddress.push_back(static_cast<char>(ch));
 	const std::string sPort{ std::to_string(nSocketPort) };
 
+	// AI_PASSIVE: resolve to a wildcard address suitable for bind() when no host is given
 	addrinfo hints{};
 	hints.ai_flags = AI_PASSIVE;
 	hints.ai_socktype = nSocketType;
 	if (sBindAddress.empty())
 	{
 		if (nDefaultAddressFormat != AF_INET && nDefaultAddressFormat != AF_INET6)
-			return;
+			return; // unsupported family: nothing to create (no error raised)
 		hints.ai_family = nDefaultAddressFormat;
 	}
 	else
-		hints.ai_family = AF_UNSPEC;
+		hints.ai_family = AF_UNSPEC; // let the bind address decide the family
 
 	addrinfo* pResult{ nullptr };
 	const int nError{ ::getaddrinfo(sBindAddress.empty() ? nullptr : sBindAddress.c_str(), sPort.c_str(), &hints, &pResult) };
 	if (nError != 0)
 		throw CSocketException(nError);
+	// RAII: frees the getaddrinfo result on every exit path
 	const std::unique_ptr<addrinfo, decltype(&::freeaddrinfo)> lookup{ pResult, &::freeaddrinfo };
 
 	// Try each candidate address until one can be created and bound
@@ -429,9 +450,9 @@ void CSocketSTL::CreateAndBind(const UINT nSocketPort, const int nSocketType, co
 			return;
 
 		nLastError = LastSocketError();
-		Close();
+		Close(); // discard the unbound socket and try the next address
 	}
-	throw CSocketException(nLastError);
+	throw CSocketException(nLastError); // no candidate address worked
 }
 
 void CSocketSTL::Bind(const SOCKADDR* pSockAddr, const int nSockAddrLen) const
@@ -465,6 +486,7 @@ void CSocketSTL::IOCtl(long lCommand, DWORD* pArgument) const
 #endif
 		);
 #if defined(_WIN32)
+	// ioctlsocket takes a u_long in/out argument
 	u_long ulArgument = static_cast<u_long>(*pArgument);
 	if (::ioctlsocket(m_hSocket, lCommand, &ulArgument) == SOCKET_ERROR)
 		throw CSocketException(LastSocketError());
@@ -552,7 +574,7 @@ int CSocketSTL::Receive(void* pBuf, const int nBufLen, const int nFlags) const
 	if (nReceived == SOCKET_ERROR)
 		throw CSocketException(LastSocketError());
 #else
-	ssize_t nResult;
+	ssize_t nResult; // retry when interrupted by a signal
 	do
 	{
 		nResult = ::recv(m_hSocket, pBuf, static_cast<size_t>(nBufLen), nFlags);
@@ -576,6 +598,7 @@ int CSocketSTL::ReceiveFrom(void* pBuffer, int nBufLen, SOCKADDR* pSockAddr, int
 #endif
 		);
 
+	// The source address is only requested when both the buffer and its length are supplied
 	SockLen nLen{ (pSockAddr != nullptr && pSockAddrLen != nullptr) ? static_cast<SockLen>(*pSockAddrLen) : static_cast<SockLen>(0) };
 	SockLen* const pLen{ (pSockAddr != nullptr && pSockAddrLen != nullptr) ? &nLen : nullptr };
 	SOCKADDR* const pFrom{ pLen != nullptr ? pSockAddr : nullptr };
@@ -605,6 +628,7 @@ int CSocketSTL::ReceiveFrom(void* pBuffer, const int nBufLen, String& strSocketA
 {
 	sockaddr_storage sockAddr{};
 	int nSockAddrLen{ static_cast<int>(sizeof(sockAddr)) };
+	// Receive into a generic address buffer, then format it as text
 	const int nResult{ ReceiveFrom(pBuffer, nBufLen, reinterpret_cast<SOCKADDR*>(&sockAddr), &nSockAddrLen, nReceiveFromFlags) };
 
 	std::string sAddress;
@@ -677,6 +701,7 @@ int CSocketSTL::SendTo(const void* pBuffer, int nBufLen, UINT nHostPort, const S
 #endif
 		);
 
+	// Narrow the host string for getaddrinfo
 	std::string sHost;
 	for (const auto ch : strHostAddress)
 		sHost.push_back(static_cast<char>(ch));
@@ -684,7 +709,7 @@ int CSocketSTL::SendTo(const void* pBuffer, int nBufLen, UINT nHostPort, const S
 
 	addrinfo hints{};
 	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_DGRAM;
+	hints.ai_socktype = SOCK_DGRAM; // SendTo is datagram-oriented
 
 	addrinfo* pResult{ nullptr };
 	const int nError{ ::getaddrinfo(sHost.empty() ? nullptr : sHost.c_str(), sPort.c_str(), &hints, &pResult) };
@@ -698,6 +723,7 @@ int CSocketSTL::SendTo(const void* pBuffer, int nBufLen, UINT nHostPort, const S
 	{
 		try
 		{
+			// Delegate to the raw-address overload; first success wins
 			return SendTo(pBuffer, nBufLen, pAddress->ai_addr, static_cast<int>(pAddress->ai_addrlen), nFlags);
 		}
 		catch (const CSocketException& e)
