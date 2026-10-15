@@ -46,7 +46,14 @@ namespace
 	int LastSocketError() noexcept { return errno; }
 #endif
 
-	// Converts a sockaddr_storage (IPv4/IPv6) to a printable address and host-order port
+	/**
+	 * Converts a sockaddr_storage (IPv4/IPv6) to a printable address and port.
+	 *
+	 * @param sockAddr the socket address to convert.
+	 * @param sAddress receives the textual IP address.
+	 * @param nPort    receives the port in host byte order.
+	 * @throws CSocketException on conversion failure or unsupported family.
+	 */
 	void FormatAddress(const sockaddr_storage& sockAddr, std::string& sAddress, UINT& nPort)
 	{
 		char szAddress[INET6_ADDRSTRLEN]{}; // large enough for either family
@@ -69,8 +76,16 @@ namespace
 		sAddress = szAddress;
 	}
 
-	// Waits up to dwTimeout ms for the requested event; error/hang-up also count as ready
-	// so that the following recv/send reports the actual condition.
+	/**
+	 * Waits for the requested event; error/hang-up also count as ready so that
+	 * the following recv/send reports the actual condition.
+	 *
+	 * @param hSocket  socket to poll.
+	 * @param nEvents  event mask (POLLIN / POLLOUT).
+	 * @param dwTimeout maximum wait in milliseconds (clamped to INT_MAX).
+	 * @return true if ready, false on timeout.
+	 * @throws CSocketException if polling fails or the handle is not a socket.
+	 */
 	bool PollSocket(SOCKET hSocket, short nEvents, const DWORD dwTimeout)
 	{
 		// poll() takes an int, so clamp large timeouts
@@ -108,12 +123,22 @@ namespace
 	}
 }
 
-// Stores the platform error code (errno / WSAGetLastError / getaddrinfo result)
+/**
+ * Constructs the exception from a platform error code.
+ *
+ * @param nError errno, WSAGetLastError() or getaddrinfo() result.
+ */
 CSocketException::CSocketException(int nError) noexcept : m_nError{ nError }
 {
 }
 
-// Fills strError with the system's text for m_nError; returns false if none is available
+/**
+ * Retrieves the system's text description of the stored error code.
+ *
+ * @param strError      receives the message (cleared on failure).
+ * @param pnHelpContext optional; always set to 0 (no help context).
+ * @return true if a message was produced, false if none is available.
+ */
 bool CSocketException::GetErrorMessage(std::string& strError, unsigned int* pnHelpContext) const
 {
     if (pnHelpContext != nullptr)
@@ -182,7 +207,9 @@ namespace
 	};
 #endif
 
-	// Triggers one-time Winsock startup (no-op on Linux)
+	/**
+	 * Triggers one-time Winsock startup (no-op on Linux).
+	 */
 	void EnsureSocketsInitialized() noexcept
 	{
 #if defined(_WIN32)
@@ -191,18 +218,27 @@ namespace
 	}
 }
 
-// Starts without a socket; makes sure the socket subsystem is initialized
+/**
+ * Default constructor. Holds no socket and ensures the socket subsystem
+ * (Winsock on Windows) is initialized.
+ */
 CSocketSTL::CSocketSTL() noexcept : m_hSocket{ INVALID_SOCKET }
 {
 	EnsureSocketsInitialized();
 }
 
+/**
+ * Destructor. Closes the owned socket, if any, so the handle never leaks.
+ */
 CSocketSTL::~CSocketSTL() noexcept
 {
     if (m_hSocket != INVALID_SOCKET)
         Close();
 }
 
+/**
+ * Closes the socket (closesocket / close). Safe to call repeatedly.
+ */
 void CSocketSTL::Close() noexcept
 {
     // Reset the handle afterwards so repeated calls are harmless
@@ -217,6 +253,11 @@ void CSocketSTL::Close() noexcept
     }
 }
 
+/**
+ * Takes ownership of an existing socket handle, closing any current one.
+ *
+ * @param hSocket the socket handle to adopt.
+ */
 void CSocketSTL::Attach(SOCKET hSocket) noexcept
 {
     // Release any socket we already own before taking the new one
@@ -225,6 +266,11 @@ void CSocketSTL::Attach(SOCKET hSocket) noexcept
     m_hSocket = hSocket;
 }
 
+/**
+ * Releases ownership without closing the socket.
+ *
+ * @return the handle; the caller becomes responsible for closing it.
+ */
 SOCKET CSocketSTL::Detach() noexcept
 {
     // Hand the handle to the caller without closing it
@@ -233,6 +279,13 @@ SOCKET CSocketSTL::Detach() noexcept
     return socket;
 }
 
+/**
+ * Retrieves the remote endpoint as printable address and port.
+ *
+ * @param sPeerAddress receives the peer IP address (IPv4 or IPv6).
+ * @param nPeerPort    receives the peer port in host byte order.
+ * @throws CSocketException if the lookup fails or the address family is unsupported.
+ */
 void CSocketSTL::GetPeerName(String& sPeerAddress, UINT& nPeerPort, int /*nAddressToStringFlags*/) const
 {
 	// sockaddr_storage can hold both IPv4 and IPv6 addresses
@@ -245,6 +298,13 @@ void CSocketSTL::GetPeerName(String& sPeerAddress, UINT& nPeerPort, int /*nAddre
 	sPeerAddress.assign(sAddress.begin(), sAddress.end());
 }
 
+/**
+ * Retrieves the local endpoint as printable address and port.
+ *
+ * @param sSocketAddress receives the local IP address (IPv4 or IPv6).
+ * @param nSocketPort    receives the local port in host byte order.
+ * @throws CSocketException if the lookup fails or the address family is unsupported.
+ */
 void CSocketSTL::GetSockName(String& sSocketAddress, UINT& nSocketPort, int /*nAddressToStringFlags*/) const
 {
 	sockaddr_storage sockAddr{};
@@ -255,6 +315,13 @@ void CSocketSTL::GetSockName(String& sSocketAddress, UINT& nSocketPort, int /*nA
 	sSocketAddress.assign(sAddress.begin(), sAddress.end());
 }
 
+/**
+ * Raw getpeername() wrapper.
+ *
+ * @param pSockAddr    receives the peer address.
+ * @param pSockAddrLen in: buffer size; out: bytes written.
+ * @throws CSocketException on failure.
+ */
 void CSocketSTL::GetPeerName(SOCKADDR* pSockAddr, int* pSockAddrLen) const
 {
 	// Use the platform's length type, then copy the result back as int
@@ -264,6 +331,13 @@ void CSocketSTL::GetPeerName(SOCKADDR* pSockAddr, int* pSockAddrLen) const
 	*pSockAddrLen = static_cast<int>(nLen);
 }
 
+/**
+ * Raw getsockname() wrapper.
+ *
+ * @param pSockAddr    receives the local address.
+ * @param pSockAddrLen in: buffer size; out: bytes written.
+ * @throws CSocketException on failure.
+ */
 void CSocketSTL::GetSockName(SOCKADDR* pSockAddr, int* pSockAddrLen) const
 {
 	SockLen nLen{ static_cast<SockLen>(*pSockAddrLen) };
@@ -272,12 +346,30 @@ void CSocketSTL::GetSockName(SOCKADDR* pSockAddr, int* pSockAddrLen) const
 	*pSockAddrLen = static_cast<int>(nLen);
 }
 
+/**
+ * Sets a socket option (setsockopt).
+ *
+ * @param nOptionName  option identifier.
+ * @param pOptionValue pointer to the option value.
+ * @param nOptionLen   size of the value in bytes.
+ * @param nLevel       protocol level (e.g. SOL_SOCKET).
+ * @throws CSocketException on failure.
+ */
 void CSocketSTL::SetSockOpt(int nOptionName, const void* pOptionValue, int nOptionLen, int nLevel) const
 {
 	if (setsockopt(m_hSocket, nLevel, nOptionName, static_cast<const char*>(pOptionValue), static_cast<SockLen>(nOptionLen)) != 0)
 		throw CSocketException(LastSocketError());
 }
 
+/**
+ * Reads a socket option (getsockopt).
+ *
+ * @param nOptionName  option identifier.
+ * @param pOptionValue receives the option value.
+ * @param pOptionLen   in: buffer size; out: bytes written.
+ * @param nLevel       protocol level (e.g. SOL_SOCKET).
+ * @throws CSocketException on failure.
+ */
 void CSocketSTL::GetSockOpt(int nOptionName, void* pOptionValue, int* pOptionLen, int nLevel) const
 {
 	SockLen nLen{ static_cast<SockLen>(*pOptionLen) }; // in: buffer size, out: bytes written
@@ -286,28 +378,60 @@ void CSocketSTL::GetSockOpt(int nOptionName, void* pOptionValue, int* pOptionLen
 	*pOptionLen = static_cast<int>(nLen);
 }
 
+/**
+ * @return true when a valid socket handle is held.
+ */
 bool CSocketSTL::IsCreated() const noexcept
 {
 	return (m_hSocket != INVALID_SOCKET);
 }
 
+/**
+ * Waits for incoming data or a pending connection.
+ *
+ * @param dwTimeout maximum wait in milliseconds.
+ * @return true if readable (or error/hang-up), false on timeout.
+ * @throws CSocketException if polling fails.
+ */
 bool CSocketSTL::IsReadible(const DWORD dwTimeout) const
 {
 	return PollSocket(m_hSocket, POLLIN, dwTimeout); // POLLIN: data (or a pending connection) is available
 }
 
+/**
+ * Waits until a send will not block.
+ *
+ * @param dwTimeout maximum wait in milliseconds.
+ * @return true if writable (or error/hang-up), false on timeout.
+ * @throws CSocketException if polling fails.
+ */
 bool CSocketSTL::IsWritable(const DWORD dwTimeout) const
 {
 	return PollSocket(m_hSocket, POLLOUT, dwTimeout); // POLLOUT: a send will not block
 }
 
 
+/**
+ * Creates a socket, choosing the type and family from flags.
+ *
+ * @param bUDP  true for a datagram (UDP) socket, false for a stream (TCP) socket.
+ * @param bIPv6 true for IPv6, false for IPv4.
+ * @throws CSocketException if socket creation fails.
+ */
 void CSocketSTL::Create(bool bUDP, bool bIPv6)
 {
 	// Datagram for UDP, stream for TCP; protocol 0 picks the default for the type
 	Create(bUDP ? SOCK_DGRAM : SOCK_STREAM, 0, bIPv6 ? AF_INET6 : PF_INET);
 }
 
+/**
+ * Creates the underlying socket. A previously held handle is not closed.
+ *
+ * @param nSocketType    e.g. SOCK_STREAM or SOCK_DGRAM.
+ * @param nProtocolType  protocol number (0 = default for the type).
+ * @param nAddressFormat address family (e.g. AF_INET, AF_INET6).
+ * @throws CSocketException if socket creation fails.
+ */
 void CSocketSTL::Create(const int nSocketType, const int nProtocolType, const int nAddressFormat)
 {
 	// Note: overwrites m_hSocket without closing a previous handle
@@ -316,6 +440,14 @@ void CSocketSTL::Create(const int nSocketType, const int nProtocolType, const in
 		throw CSocketException(LastSocketError());
 }
 
+/**
+ * Connects to a remote address, waiting for completion when the connect is
+ * non-blocking or interrupted.
+ *
+ * @param pSockAddr    remote address.
+ * @param nSockAddrLen size of the address in bytes.
+ * @throws CSocketException on invalid arguments, timeout or connection failure.
+ */
 void CSocketSTL::Connect(const SOCKADDR* pSockAddr, const int nSockAddrLen) const
 {
 	// Reject a missing or empty address
@@ -364,6 +496,14 @@ void CSocketSTL::Connect(const SOCKADDR* pSockAddr, const int nSockAddrLen) cons
 #endif
 }
 
+/**
+ * Accepts an incoming connection.
+ *
+ * @param connectedSocket receives (takes ownership of) the accepted socket.
+ * @param pSockAddr       optional; receives the peer address.
+ * @param pSockAddrLen    optional; in: buffer size, out: bytes written.
+ * @throws CSocketException if accept fails.
+ */
 void CSocketSTL::Accept(CSocketSTL& connectedSocket, SOCKADDR* pSockAddr, int* pSockAddrLen) const
 {
 	// The platform accept() expects SockLen (socklen_t on Linux, int on Windows)
@@ -393,6 +533,16 @@ void CSocketSTL::Accept(CSocketSTL& connectedSocket, SOCKADDR* pSockAddr, int* p
 	connectedSocket.Attach(socket);
 }
 
+/**
+ * Creates a socket and binds it to the configured bind address (or the
+ * wildcard address), using the first resolved candidate that works.
+ *
+ * @param nSocketPort           port to bind (0-65535).
+ * @param nSocketType           e.g. SOCK_STREAM or SOCK_DGRAM.
+ * @param nDefaultAddressFormat AF_INET or AF_INET6 when no bind address is set;
+ *                              any other value does nothing.
+ * @throws CSocketException on invalid port, resolution, creation or bind failure.
+ */
 void CSocketSTL::CreateAndBind(const UINT nSocketPort, const int nSocketType, const int nDefaultAddressFormat)
 {
 	// Ports are 16-bit
@@ -455,6 +605,13 @@ void CSocketSTL::CreateAndBind(const UINT nSocketPort, const int nSocketType, co
 	throw CSocketException(nLastError); // no candidate address worked
 }
 
+/**
+ * Binds the socket to a local address.
+ *
+ * @param pSockAddr    local address.
+ * @param nSockAddrLen size of the address in bytes.
+ * @throws CSocketException on invalid arguments or bind failure.
+ */
 void CSocketSTL::Bind(const SOCKADDR* pSockAddr, const int nSockAddrLen) const
 {
 	if (pSockAddr == nullptr || nSockAddrLen <= 0)
@@ -475,6 +632,13 @@ void CSocketSTL::Bind(const SOCKADDR* pSockAddr, const int nSockAddrLen) const
 #endif
 }
 
+/**
+ * Winsock-style ioctl. On Linux, FIONBIO is mapped to fcntl() O_NONBLOCK.
+ *
+ * @param lCommand  control command (e.g. FIONBIO).
+ * @param pArgument in/out command argument; must not be null.
+ * @throws CSocketException on invalid argument or failure.
+ */
 void CSocketSTL::IOCtl(long lCommand, DWORD* pArgument) const
 {
 	if (pArgument == nullptr)
@@ -511,6 +675,12 @@ void CSocketSTL::IOCtl(long lCommand, DWORD* pArgument) const
 #endif
 }
 
+/**
+ * Puts the socket in listening state.
+ *
+ * @param nConnectionBacklog queue length; non-positive uses SOMAXCONN.
+ * @throws CSocketException on failure.
+ */
 void CSocketSTL::Listen(const int nConnectionBacklog) const
 {
 #if defined(_WIN32)
@@ -530,6 +700,12 @@ void CSocketSTL::Listen(const int nConnectionBacklog) const
 #endif
 }
 
+/**
+ * Disables receiving, sending or both on the connection.
+ *
+ * @param nHow 0 = receive, 1 = send, 2 = both.
+ * @throws CSocketException on invalid value or failure.
+ */
 void CSocketSTL::ShutDown(const int nHow) const
 {
 	// 0 = receive, 1 = send, 2 = both (SD_* on Windows, SHUT_* on Linux share these values)
@@ -558,8 +734,18 @@ void CSocketSTL::ShutDown(const int nHow) const
 #endif
 }
 
+/**
+ * Receives data from a connected socket.
+ *
+ * @param pBuf    destination buffer.
+ * @param nBufLen buffer capacity in bytes.
+ * @param nFlags  recv() flags.
+ * @return number of bytes received (0 = peer closed the connection).
+ * @throws CSocketException on invalid arguments or failure.
+ */
 int CSocketSTL::Receive(void* pBuf, const int nBufLen, const int nFlags) const
 {
+	// Validate arguments
 	if (pBuf == nullptr || nBufLen < 0)
 		throw CSocketException(
 #if defined(_WIN32)
@@ -587,6 +773,17 @@ int CSocketSTL::Receive(void* pBuf, const int nBufLen, const int nFlags) const
 	return nReceived;
 }
 
+/**
+ * Receives a datagram and optionally reports the sender's raw address.
+ *
+ * @param pBuffer      destination buffer.
+ * @param nBufLen      buffer capacity in bytes.
+ * @param pSockAddr    optional; receives the sender address.
+ * @param pSockAddrLen optional; in: buffer size, out: bytes written.
+ * @param nFlags       recvfrom() flags.
+ * @return number of bytes received.
+ * @throws CSocketException on invalid arguments or failure.
+ */
 int CSocketSTL::ReceiveFrom(void* pBuffer, int nBufLen, SOCKADDR* pSockAddr, int* pSockAddrLen, int nFlags) const
 {
 	if (pBuffer == nullptr || nBufLen < 0)
@@ -624,6 +821,18 @@ int CSocketSTL::ReceiveFrom(void* pBuffer, int nBufLen, SOCKADDR* pSockAddr, int
 	return nReceived;
 }
 
+/**
+ * Receives a datagram and reports the sender as printable address and port.
+ *
+ * @param pBuffer             destination buffer.
+ * @param nBufLen             buffer capacity in bytes.
+ * @param strSocketAddress    receives the sender IP address.
+ * @param nSocketPort         receives the sender port (host byte order).
+ * @param nReceiveFromFlags   recvfrom() flags.
+ * @param nAddressToStringFlags unused (kept for API compatibility).
+ * @return number of bytes received.
+ * @throws CSocketException on failure.
+ */
 int CSocketSTL::ReceiveFrom(void* pBuffer, const int nBufLen, String& strSocketAddress, UINT& nSocketPort, const int nReceiveFromFlags, int /*nAddressToStringFlags*/) const
 {
 	sockaddr_storage sockAddr{};
@@ -637,6 +846,16 @@ int CSocketSTL::ReceiveFrom(void* pBuffer, const int nBufLen, String& strSocketA
 	return nResult;
 }
 
+/**
+ * Sends data on a connected socket. On Linux, SIGPIPE is suppressed
+ * (MSG_NOSIGNAL) and EPIPE is reported instead.
+ *
+ * @param pBuffer data to send.
+ * @param nBufLen number of bytes to send.
+ * @param nFlags  send() flags.
+ * @return number of bytes actually sent.
+ * @throws CSocketException on failure.
+ */
 int CSocketSTL::Send(const void* pBuffer, int nBufLen, int nFlags) const
 {
 #if defined(_WIN32)
@@ -659,6 +878,17 @@ int CSocketSTL::Send(const void* pBuffer, int nBufLen, int nFlags) const
 #endif
 }
 
+/**
+ * Sends a datagram to a raw socket address.
+ *
+ * @param pBuffer      data to send.
+ * @param nBufLen      number of bytes to send.
+ * @param pSockAddr    destination address.
+ * @param nSockAddrLen size of the address in bytes.
+ * @param nFlags       sendto() flags.
+ * @return number of bytes actually sent.
+ * @throws CSocketException on invalid arguments or failure.
+ */
 int CSocketSTL::SendTo(const void* pBuffer, int nBufLen, const SOCKADDR* pSockAddr, int nSockAddrLen, int nFlags) const
 {
 	if (pBuffer == nullptr || nBufLen < 0 || pSockAddr == nullptr || nSockAddrLen <= 0)
@@ -690,6 +920,17 @@ int CSocketSTL::SendTo(const void* pBuffer, int nBufLen, const SOCKADDR* pSockAd
 #endif
 }
 
+/**
+ * Resolves a host name/IP and sends a datagram to the first address that works.
+ *
+ * @param pBuffer        data to send.
+ * @param nBufLen        number of bytes to send.
+ * @param nHostPort      destination port (0-65535).
+ * @param strHostAddress destination host name or IP address.
+ * @param nFlags         sendto() flags.
+ * @return number of bytes actually sent.
+ * @throws CSocketException on invalid port, resolution failure or send failure.
+ */
 int CSocketSTL::SendTo(const void* pBuffer, int nBufLen, UINT nHostPort, const String& strHostAddress, int nFlags) const
 {
 	if (nHostPort > 65535)
