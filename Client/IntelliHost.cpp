@@ -21,6 +21,10 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 #include "tinyxml2.h"
 #include "SocketSTL.h"
 
+#define MARJOR_VERSION 0
+#define MINOR_VERSION 0
+#define REVISION 1
+
 namespace
 {
 
@@ -45,6 +49,7 @@ void vPrintUsage(const char* pszProgram)
 {
 	std::cerr << "Usage:\n"
 			  << "  " << pszProgram << " --help\n"
+			  << "  " << pszProgram << " --version\n"
 			  << "  " << pszProgram << " --generate-token\n"
 			  << "  " << pszProgram
 			  << " <--download|--upload|--delete> --input-file FILE --output-folder FOLDER"
@@ -200,6 +205,12 @@ int main(const int argc, char* argv[])
 	if (argc == 2 && std::string_view(argv[1]) == "--help")
 	{
 		vPrintUsage(argv[0]);
+		return 0;
+	}
+
+	if (argc == 2 && std::string_view(argv[1]) == "--version")
+	{
+		std::cout << "v" << MARJOR_VERSION << "." << MINOR_VERSION << "." << REVISION << std::endl;
 		return 0;
 	}
 
