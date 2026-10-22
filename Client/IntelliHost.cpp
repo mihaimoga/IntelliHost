@@ -17,34 +17,63 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <vector>
+
+#ifdef _WIN32
+#define SECURITY_WIN32
+#include <windows.h>
+#include <secext.h>
+#pragma comment(lib, "Secur32.lib")
+#else
+#include <pwd.h>
+#include <sys/types.h>
+#include <unistd.h>
+#endif
 
 #include "tinyxml2.h"
 #include "SocketSTL.h"
 
-#define MARJOR_VERSION 0
-#define MINOR_VERSION 0
-#define REVISION 1
+enum Version
+{
+	MARJOR_VERSION = 0,
+	MINOR_VERSION = 0,
+	REVISION = 1
+};
 
 namespace
 {
 
-constexpr std::string_view DIGITS = "0123456789";
+constexpr std::string_view strDigits = "0123456789";
+enum BufferSize
+{
+	nNameBufferSize = 0x100,
+	nPasswdBufferSize = 0x400
+};
+
+enum ArgumentCount
+{
+	nMinArgCount = 2,
+	nFirstArgIndex = 1
+};
 
 struct Endpoint
 {
-	std::string strHost;
-	std::string strPort;
+	std::string _strHost;
+	std::string _strPort;
 };
 
 struct CommandLine
 {
-	std::string strCommand;
-	std::string strInputFile;
-	std::string strOutputFolder;
-	std::string strToken;
-	std::string strMachine;
+	std::string _strCommand;
+	std::string _strInputFile;
+	std::string _strOutputFolder;
+	std::string _strToken;
+	std::string _strMachine;
 };
 
+/// @brief Prints the command line usage text to standard error.
+///
+/// @param pszProgram The program name (typically argv[0]) shown in the usage lines.
 void vPrintUsage(const char* pszProgram)
 {
 	std::cerr << "Usage:\n"
@@ -59,50 +88,64 @@ void vPrintUsage(const char* pszProgram)
 			  << std::endl;
 }
 
+/// @brief Checks whether an argument is one of the supported actions.
+///
+/// @param strCommand The command line argument to test.
+/// @return true if it is --generate-token, --download, --upload or --delete.
 bool bIsCommand(const std::string_view strCommand)
 {
 	return strCommand == "--generate-token" || strCommand == "--download" || strCommand == "--upload" ||
 		   strCommand == "--delete";
 }
 
+/// @brief Parses and validates the command line arguments.
+///
+/// Falls back to the TOKEN_ID environment variable when --token is absent, and
+/// checks that all parameters required by the chosen action are present.
+///
+/// @param nArgc The number of arguments.
+/// @param ppszArgv The argument vector.
+/// @param[out] cmdLine Receives the parsed command line values.
+/// @param[out] strError Receives a description of the problem on failure.
+/// @return true if the command line is valid, false otherwise.
 bool bParseCommandLine(const int nArgc, char* ppszArgv[], CommandLine& cmdLine, std::string& strError)
 {
-	if (nArgc < 2)
+	if (nArgc < nMinArgCount)
 	{
 		strError = "an action is required";
 		return false;
 	}
 
-	for (int nIndex = 1; nIndex < nArgc; ++nIndex)
+	for (int nIndex = nFirstArgIndex; nIndex < nArgc; ++nIndex)
 	{
 		const std::string_view strArgument{ppszArgv[nIndex]};
 		if (bIsCommand(strArgument))
 		{
-			if (!cmdLine.strCommand.empty())
+			if (!cmdLine._strCommand.empty())
 			{
 				strError = "only one action may be specified";
 				return false;
 			}
-			cmdLine.strCommand = strArgument;
+			cmdLine._strCommand = strArgument;
 			continue;
 		}
 
 		std::string* pstrDestination = nullptr;
 		if (strArgument == "--input-file")
 		{
-			pstrDestination = &cmdLine.strInputFile;
+			pstrDestination = &cmdLine._strInputFile;
 		}
 		else if (strArgument == "--output-folder")
 		{
-			pstrDestination = &cmdLine.strOutputFolder;
+			pstrDestination = &cmdLine._strOutputFolder;
 		}
 		else if (strArgument == "--token")
 		{
-			pstrDestination = &cmdLine.strToken;
+			pstrDestination = &cmdLine._strToken;
 		}
 		else if (strArgument == "--machine")
 		{
-			pstrDestination = &cmdLine.strMachine;
+			pstrDestination = &cmdLine._strMachine;
 		}
 		else
 		{
@@ -123,27 +166,27 @@ bool bParseCommandLine(const int nArgc, char* ppszArgv[], CommandLine& cmdLine, 
 		*pstrDestination = ppszArgv[nIndex];
 	}
 
-	if (cmdLine.strToken.empty())
+	if (cmdLine._strToken.empty())
 	{
 		if (const char* pszToken = std::getenv("TOKEN_ID"); pszToken != nullptr)
 		{
-			cmdLine.strToken = pszToken;
+			cmdLine._strToken = pszToken;
 		}
 	}
 
-	if (cmdLine.strCommand.empty())
+	if (cmdLine._strCommand.empty())
 	{
 		strError = "an action is required";
 	}
-	else if (cmdLine.strInputFile.empty() && (cmdLine.strCommand != "--generate-token"))
+	else if (cmdLine._strInputFile.empty() && (cmdLine._strCommand != "--generate-token"))
 	{
 		strError = "--input-file is required";
 	}
-	else if (cmdLine.strOutputFolder.empty() && (cmdLine.strCommand != "--generate-token"))
+	else if (cmdLine._strOutputFolder.empty() && (cmdLine._strCommand != "--generate-token"))
 	{
 		strError = "--output-folder is required";
 	}
-	else if (cmdLine.strToken.empty() && (cmdLine.strCommand != "--generate-token"))
+	else if (cmdLine._strToken.empty() && (cmdLine._strCommand != "--generate-token"))
 	{
 		strError = "--token or TOKEN_ID environment variable is required";
 	}
@@ -151,6 +194,14 @@ bool bParseCommandLine(const int nArgc, char* ppszArgv[], CommandLine& cmdLine, 
 	return strError.empty();
 }
 
+/// @brief Loads the server address from IntelliHost.xml.
+///
+/// Reads the ServerIP and ServerPort elements under the IntelliHost root and
+/// stores them as HOST:PORT in the command line's machine field.
+///
+/// @param[in,out] cmdLine Receives the machine value.
+/// @param[out] strError Receives a description of the problem on failure.
+/// @return true on success, false if the file is missing or malformed.
 bool bLoadMachineFromConfiguration(CommandLine& cmdLine, std::string& strError)
 {
 	tinyxml2::XMLDocument xmlDocument;
@@ -176,10 +227,15 @@ bool bLoadMachineFromConfiguration(CommandLine& cmdLine, std::string& strError)
 		return false;
 	}
 
-	cmdLine.strMachine = std::string(pXmlServerIp->GetText()) + ':' + pXmlServerPort->GetText();
+	cmdLine._strMachine = std::string(pXmlServerIp->GetText()) + ':' + pXmlServerPort->GetText();
 	return true;
 }
 
+/// @brief Splits a HOST:PORT string into its host and port parts.
+///
+/// @param strValue The text to parse; the last ':' separates host from port.
+/// @param[out] endpointParsed Receives the host and port.
+/// @return true if both parts are non-empty and the port is numeric.
 bool bParseEndpoint(std::string_view strValue, Endpoint& endpointParsed)
 {
 	if (strValue.empty())
@@ -193,22 +249,135 @@ bool bParseEndpoint(std::string_view strValue, Endpoint& endpointParsed)
 		return false;
 	}
 
-	endpointParsed.strHost = strValue.substr(0, nSeparator);
-	endpointParsed.strPort = strValue.substr(nSeparator + 1);
-	return endpointParsed.strPort.find_first_not_of(DIGITS) == std::string::npos;
+	endpointParsed._strHost = strValue.substr(0, nSeparator);
+	endpointParsed._strPort = strValue.substr(nSeparator + 1);
+	return endpointParsed._strPort.find_first_not_of(strDigits) == std::string::npos;
+}
+
+/// @brief Retrieves the name of the user running the current process.
+///
+/// On Windows the user principal name is preferred, falling back to the plain
+/// account name. On Linux the effective user is looked up in the password
+/// database, falling back to the USER environment variable.
+///
+/// @return The user name encoded as UTF-8, or an empty string on failure.
+std::string strGetUserID()
+{
+#ifdef _WIN32
+	wchar_t szUserName[nNameBufferSize] = { 0, };
+	DWORD dwLength{nNameBufferSize};
+	// Try the user principal name first (e.g. user@domain)
+	if (!GetUserNameExW(NameUserPrincipal, szUserName, &dwLength))
+	{
+		// Fall back to the plain account name; reset the buffer size first
+		dwLength = nNameBufferSize;
+		if (!GetUserNameW(szUserName, &dwLength))
+		{
+			return std::string();
+		}
+		// GetUserNameW counts the terminating null
+		if (dwLength > 0)
+		{
+			--dwLength;
+		}
+	}
+	if (dwLength == 0)
+	{
+		return std::string();
+	}
+	// First call computes the required UTF-8 buffer size
+	const int nSize{WideCharToMultiByte(CP_UTF8, 0, szUserName, static_cast<int>(dwLength), nullptr, 0, nullptr, nullptr)};
+	if (nSize <= 0)
+	{
+		return std::string();
+	}
+	// Second call performs the actual UTF-16 to UTF-8 conversion
+	std::string strUserName(static_cast<size_t>(nSize), '\0');
+	WideCharToMultiByte(CP_UTF8, 0, szUserName, static_cast<int>(dwLength), strUserName.data(), nSize, nullptr, nullptr);
+	return strUserName;
+#else
+	// Linux locale encodings are normally UTF-8, so the bytes are returned as-is.
+	// Size the buffer as recommended by the system, or use a default size
+	std::vector<char> vecBuffer(sysconf(_SC_GETPW_R_SIZE_MAX) > 0 ? static_cast<size_t>(sysconf(_SC_GETPW_R_SIZE_MAX)) : static_cast<size_t>(nPasswdBufferSize));
+	struct passwd pwdEntry;
+	struct passwd* ppwdResult = nullptr;
+	if (getpwuid_r(geteuid(), &pwdEntry, vecBuffer.data(), vecBuffer.size(), &ppwdResult) == 0 && ppwdResult != nullptr &&
+		ppwdResult->pw_name != nullptr)
+	{
+		return std::string(ppwdResult->pw_name);
+	}
+	// Last resort: use the USER environment variable
+	const char* pszUser = std::getenv("USER");
+	return pszUser != nullptr ? std::string(pszUser) : std::string();
+#endif
+}
+
+/// @brief Retrieves the name of the machine (host) running the current process.
+///
+/// On Windows the fully qualified DNS name is preferred, falling back to the
+/// NetBIOS computer name. On Linux the kernel host name is used.
+///
+/// @return The machine name encoded as UTF-8, or an empty string on failure.
+std::string strGetMachineID()
+{
+#ifdef _WIN32
+	wchar_t szComputerName[nNameBufferSize] = { 0, };
+	DWORD dwLength{nNameBufferSize};
+	// Try the fully qualified DNS name first
+	if (!GetComputerNameExW(ComputerNamePhysicalDnsFullyQualified, szComputerName, &dwLength))
+	{
+		// Fall back to the NetBIOS name; reset the buffer size first
+		dwLength = nNameBufferSize;
+		if (!GetComputerNameW(szComputerName, &dwLength))
+		{
+			return std::string();
+		}
+	}
+	if (dwLength == 0)
+	{
+		return std::string();
+	}
+	// First call computes the required UTF-8 buffer size
+	const int nSize{WideCharToMultiByte(CP_UTF8, 0, szComputerName, static_cast<int>(dwLength), nullptr, 0, nullptr, nullptr)};
+	if (nSize <= 0)
+	{
+		return std::string();
+	}
+	// Second call performs the actual UTF-16 to UTF-8 conversion
+	std::string strComputerName(static_cast<size_t>(nSize), '\0');
+	WideCharToMultiByte(CP_UTF8, 0, szComputerName, static_cast<int>(dwLength), strComputerName.data(), nSize, nullptr, nullptr);
+	return strComputerName;
+#else
+	// Linux host names are raw bytes, normally UTF-8, so they are returned as-is.
+	char szHostName[nNameBufferSize] = { 0, };
+	// Reserve the last byte so the name is always null-terminated
+	if (gethostname(szHostName, sizeof(szHostName) - 1) != 0)
+	{
+		return std::string();
+	}
+	return std::string(szHostName);
+#endif
 }
 
 } // namespace
 
-int main(const int argc, char* argv[])
+/// @brief Program entry point.
+///
+/// Handles --help and --version, parses the command line, resolves the server
+/// endpoint (from --machine or IntelliHost.xml) and prints the user and machine IDs.
+///
+/// @param nArgc The number of arguments.
+/// @param ppszArgv The argument vector.
+/// @return 0 on success, -1 on error.
+int main(const int nArgc, char* ppszArgv[])
 {
-	if (argc == 2 && std::string_view(argv[1]) == "--help")
+	if (nArgc == nMinArgCount && std::string_view(ppszArgv[1]) == "--help")
 	{
-		vPrintUsage(argv[0]);
+		vPrintUsage(ppszArgv[0]);
 		return 0;
 	}
 
-	if (argc == 2 && std::string_view(argv[1]) == "--version")
+	if (nArgc == nMinArgCount && std::string_view(ppszArgv[1]) == "--version")
 	{
 		std::cout << "v" << MARJOR_VERSION << "." << MINOR_VERSION << "." << REVISION << std::endl;
 		return 0;
@@ -216,25 +385,30 @@ int main(const int argc, char* argv[])
 
 	CommandLine cmdLine;
 	std::string strError;
-	if (!bParseCommandLine(argc, argv, cmdLine, strError))
+	if (!bParseCommandLine(nArgc, ppszArgv, cmdLine, strError))
 	{
 		std::cerr << "error: " << strError << std::endl;
-		vPrintUsage(argv[0]);
+		vPrintUsage(ppszArgv[0]);
 		return -1;
 	}
 
-	if (cmdLine.strMachine.empty() && !bLoadMachineFromConfiguration(cmdLine, strError))
+	if (cmdLine._strMachine.empty() && !bLoadMachineFromConfiguration(cmdLine, strError))
 	{
 		std::cerr << "error: " << strError << std::endl;
 		return -1;
 	}
 
 	Endpoint endpointMachine;
-	if (!bParseEndpoint(cmdLine.strMachine, endpointMachine))
+	if (!bParseEndpoint(cmdLine._strMachine, endpointMachine))
 	{
 		std::cerr << "error: machine must be in HOST:PORT form" << std::endl;
 		return -1;
 	}
+
+	const std::string strUserID = strGetUserID();
+	std::cout << "UserID: " << strUserID << std::endl;
+	const std::string strMachineID = strGetMachineID();
+	std::cout << "MachineID: " << strMachineID << std::endl;
 
 	return 0;
 }
