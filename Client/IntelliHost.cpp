@@ -13,7 +13,9 @@ or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 You should have received a copy of the GNU General Public License along with
 IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 
+#include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -30,8 +32,9 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 #include <unistd.h>
 #endif
 
-#include "tinyxml2.h"
+#include "SHA256.h"
 #include "SocketSTL.h"
+#include "tinyxml2.h"
 
 enum Version
 {
@@ -359,6 +362,33 @@ std::string strGetMachineID()
 #endif
 }
 
+/// @brief Retrieves the current UTC date and time.
+///
+/// @return The timestamp formatted as "YYYY-MM-DDTHH:MM:SSZ", or an empty string on failure.
+std::string strGetDateTime()
+{
+	char szDateTime[32] = { 0, };
+#ifdef _WIN32
+	SYSTEMTIME stNow;
+	GetSystemTime(&stNow);
+	const int nLength = snprintf(szDateTime, sizeof(szDateTime), "%04u-%02u-%02uT%02u:%02u:%02uZ",
+		stNow.wYear, stNow.wMonth, stNow.wDay, stNow.wHour, stNow.wMinute, stNow.wSecond);
+	if (nLength <= 0)
+	{
+		return std::string();
+	}
+#else
+	const time_t tmNow = time(nullptr);
+	struct tm tmUtc;
+	if (tmNow == static_cast<time_t>(-1) || gmtime_r(&tmNow, &tmUtc) == nullptr ||
+		strftime(szDateTime, sizeof(szDateTime), "%Y-%m-%dT%H:%M:%SZ", &tmUtc) == 0)
+	{
+		return std::string();
+	}
+#endif
+	return std::string(szDateTime);
+}
+
 } // namespace
 
 /// @brief Program entry point.
@@ -379,7 +409,7 @@ int main(const int nArgc, char* ppszArgv[])
 
 	if (nArgc == nMinArgCount && std::string_view(ppszArgv[1]) == "--version")
 	{
-		std::cout << "v" << MARJOR_VERSION << "." << MINOR_VERSION << "." << REVISION << std::endl;
+		std::cout << ppszArgv[0] << "v" << MARJOR_VERSION << "." << MINOR_VERSION << "." << REVISION << std::endl;
 		return 0;
 	}
 
@@ -405,10 +435,24 @@ int main(const int nArgc, char* ppszArgv[])
 		return -1;
 	}
 
-	const std::string strUserID = strGetUserID();
-	std::cout << "UserID: " << strUserID << std::endl;
-	const std::string strMachineID = strGetMachineID();
-	std::cout << "MachineID: " << strMachineID << std::endl;
+	if (nArgc == nMinArgCount && std::string_view(ppszArgv[1]) == "--generate-token")
+	{
+		const std::string strUserID = strGetUserID();
+		std::cout << "UserID: " << strUserID << std::endl;
+		const std::string strMachineID = strGetMachineID();
+		std::cout << "MachineID: " << strMachineID << std::endl;
+		const std::string strDateTime = strGetDateTime();
+		std::cout << "DateTime: " << strDateTime << std::endl;
+
+		if (!strUserID.empty() && !strMachineID.empty() && !strDateTime.empty())
+		{
+			std::string strRawData = strUserID + (" : ") + strMachineID + (" : ") + strDateTime;
+			SHA256 sha256;
+			sha256.update(strRawData);
+			const std::string strToken = SHA256::toString(sha256.digest());
+			std::cout << "TokenID: " << strToken << std::endl;
+		}
+	}
 
 	return 0;
 }
