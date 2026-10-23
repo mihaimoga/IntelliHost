@@ -37,6 +37,7 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 #include "tinyxml2.h"
 
 namespace {
+	/// @brief Application version numbers.
 	enum Version
 	{
 		MAJOR_VERSION = 0,
@@ -44,25 +45,30 @@ namespace {
 		REVISION = 1
 	};
 
+/// @brief Characters accepted in a numeric port.
 constexpr std::string_view strDigits = "0123456789";
+/// @brief Buffer sizes used when querying user and host names.
 enum BufferSize
 {
 	nNameBufferSize = 0x100,
 	nPasswdBufferSize = 0x400
 };
 
+/// @brief Argument count and index constants for command line parsing.
 enum ArgumentCount
 {
 	nMinArgCount = 2,
 	nFirstArgIndex = 1
 };
 
+/// @brief A server address split into host and port.
 struct Endpoint
 {
 	std::string _strHost;
 	std::string _strPort;
 };
 
+/// @brief Values parsed from the command line.
 struct CommandLine
 {
 	std::string _strCommand;
@@ -75,7 +81,7 @@ struct CommandLine
 /// @brief Prints the command line usage text to standard error.
 ///
 /// @param pszProgram The program name (typically argv[0]) shown in the usage lines.
-void vPrintUsage(const char* pszProgram)
+void PrintApplicationUsage(const char* pszProgram)
 {
 	std::cerr << "Usage:\n"
 			  << "  " << pszProgram << " --help\n"
@@ -93,7 +99,7 @@ void vPrintUsage(const char* pszProgram)
 ///
 /// @param strCommand The command line argument to test.
 /// @return true if it is --generate-token, --download, --upload or --delete.
-bool bIsCommand(const std::string_view strCommand)
+bool IsCommand(const std::string_view strCommand)
 {
 	return strCommand == "--generate-token" || strCommand == "--download" || strCommand == "--upload" ||
 		   strCommand == "--delete";
@@ -109,7 +115,7 @@ bool bIsCommand(const std::string_view strCommand)
 /// @param[out] cmdLine Receives the parsed command line values.
 /// @param[out] strError Receives a description of the problem on failure.
 /// @return true if the command line is valid, false otherwise.
-bool bParseCommandLine(const int nArgc, char* ppszArgv[], CommandLine& cmdLine, std::string& strError)
+bool ParseCommandLine(const int nArgc, char* ppszArgv[], CommandLine& cmdLine, std::string& strError)
 {
 	// At least the program name and one action are expected
 	if (nArgc < nMinArgCount)
@@ -121,7 +127,7 @@ bool bParseCommandLine(const int nArgc, char* ppszArgv[], CommandLine& cmdLine, 
 	for (int nIndex = nFirstArgIndex; nIndex < nArgc; ++nIndex)
 	{
 		const std::string_view strArgument{ppszArgv[nIndex]};
-		if (bIsCommand(strArgument))
+		if (IsCommand(strArgument))
 		{
 			// Only one action is allowed per invocation
 			if (!cmdLine._strCommand.empty())
@@ -210,7 +216,7 @@ bool bParseCommandLine(const int nArgc, char* ppszArgv[], CommandLine& cmdLine, 
 /// @param[in,out] cmdLine Receives the machine value.
 /// @param[out] strError Receives a description of the problem on failure.
 /// @return true on success, false if the file is missing or malformed.
-bool bLoadMachineFromConfiguration(CommandLine& cmdLine, std::string& strError)
+bool LoadMachineFromConfiguration(CommandLine& cmdLine, std::string& strError)
 {
 	// The configuration file is read from the current working directory
 	tinyxml2::XMLDocument xmlDocument;
@@ -246,7 +252,7 @@ bool bLoadMachineFromConfiguration(CommandLine& cmdLine, std::string& strError)
 /// @param strValue The text to parse; the last ':' separates host from port.
 /// @param[out] endpointParsed Receives the host and port.
 /// @return true if both parts are non-empty and the port is numeric.
-bool bParseEndpoint(std::string_view strValue, Endpoint& endpointParsed)
+bool ParseEndpoint(std::string_view strValue, Endpoint& endpointParsed)
 {
 	if (strValue.empty())
 	{
@@ -274,7 +280,7 @@ bool bParseEndpoint(std::string_view strValue, Endpoint& endpointParsed)
 /// database, falling back to the USER environment variable.
 ///
 /// @return The user name encoded as UTF-8, or an empty string on failure.
-std::string strGetUserID()
+std::string GetUserID()
 {
 #ifdef _WIN32
 	wchar_t szUserName[nNameBufferSize] = { 0, };
@@ -331,7 +337,7 @@ std::string strGetUserID()
 /// NetBIOS computer name. On Linux the kernel host name is used.
 ///
 /// @return The machine name encoded as UTF-8, or an empty string on failure.
-std::string strGetMachineID()
+std::string GetMachineID()
 {
 #ifdef _WIN32
 	wchar_t szComputerName[nNameBufferSize] = { 0, };
@@ -375,7 +381,7 @@ std::string strGetMachineID()
 /// @brief Retrieves the current UTC date and time.
 ///
 /// @return The timestamp formatted as "YYYY-MM-DDTHH:MM:SSZ", or an empty string on failure.
-std::string strGetDateTime()
+std::string GetDateTime()
 {
 	char szDateTime[32] = { 0, };
 #ifdef _WIN32
@@ -416,7 +422,7 @@ int main(const int nArgc, char* ppszArgv[])
 	// --help is only valid as the sole argument
 	if (nArgc == nMinArgCount && std::string_view(ppszArgv[1]) == "--help")
 	{
-		vPrintUsage(ppszArgv[0]);
+		PrintApplicationUsage(ppszArgv[0]);
 		return 0;
 	}
 
@@ -430,15 +436,15 @@ int main(const int nArgc, char* ppszArgv[])
 	// Parse and validate the command line
 	CommandLine cmdLine;
 	std::string strError;
-	if (!bParseCommandLine(nArgc, ppszArgv, cmdLine, strError))
+	if (!ParseCommandLine(nArgc, ppszArgv, cmdLine, strError))
 	{
 		std::cerr << "error: " << strError << std::endl;
-		vPrintUsage(ppszArgv[0]);
+		PrintApplicationUsage(ppszArgv[0]);
 		return -1;
 	}
 
 	// Use the server from IntelliHost.xml when --machine was not given
-	if (cmdLine._strMachine.empty() && !bLoadMachineFromConfiguration(cmdLine, strError))
+	if (cmdLine._strMachine.empty() && !LoadMachineFromConfiguration(cmdLine, strError))
 	{
 		std::cerr << "error: " << strError << std::endl;
 		return -1;
@@ -446,7 +452,7 @@ int main(const int nArgc, char* ppszArgv[])
 
 	// Validate the server address
 	Endpoint endpointMachine;
-	if (!bParseEndpoint(cmdLine._strMachine, endpointMachine))
+	if (!ParseEndpoint(cmdLine._strMachine, endpointMachine))
 	{
 		std::cerr << "error: machine must be in HOST:PORT form" << std::endl;
 		return -1;
@@ -455,11 +461,11 @@ int main(const int nArgc, char* ppszArgv[])
 	// Token generation: hash "user : machine : UTC time" with SHA-256
 	if (nArgc == nMinArgCount && std::string_view(ppszArgv[1]) == "--generate-token")
 	{
-		const std::string strUserID = strGetUserID();
+		const std::string& strUserID = GetUserID();
 		std::cout << "UserID: " << strUserID << std::endl;
-		const std::string strMachineID = strGetMachineID();
+		const std::string& strMachineID = GetMachineID();
 		std::cout << "MachineID: " << strMachineID << std::endl;
-		const std::string strDateTime = strGetDateTime();
+		const std::string& strDateTime = GetDateTime();
 		std::cout << "DateTime: " << strDateTime << std::endl;
 
 		// Only produce a token when every component was retrieved
@@ -468,7 +474,7 @@ int main(const int nArgc, char* ppszArgv[])
 			std::string strRawData = strUserID + (" : ") + strMachineID + (" : ") + strDateTime;
 			SHA256 sha256;
 			sha256.update(strRawData);
-			const std::string strTokenID = SHA256::toString(sha256.digest());
+			const std::string& strTokenID = SHA256::toString(sha256.digest());
 			std::cout << "TokenID: " << strTokenID << std::endl;
 		}
 	}
