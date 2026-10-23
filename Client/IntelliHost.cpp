@@ -38,7 +38,7 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 
 enum Version
 {
-	MARJOR_VERSION = 0,
+	MAJOR_VERSION = 0,
 	MINOR_VERSION = 0,
 	REVISION = 1
 };
@@ -409,7 +409,7 @@ int main(const int nArgc, char* ppszArgv[])
 
 	if (nArgc == nMinArgCount && std::string_view(ppszArgv[1]) == "--version")
 	{
-		std::cout << ppszArgv[0] << "v" << MARJOR_VERSION << "." << MINOR_VERSION << "." << REVISION << std::endl;
+		std::cout << ppszArgv[0] << "v" << MAJOR_VERSION << "." << MINOR_VERSION << "." << REVISION << std::endl;
 		return 0;
 	}
 
