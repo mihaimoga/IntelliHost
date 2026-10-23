@@ -6,6 +6,7 @@ set(INTELLIHOST_SOURCES
     IntelliHost.cpp
     SocketSTL.cpp
     tinyxml2.cpp
+    SHA256.cpp
 )
 
 add_executable(IntelliHost ${INTELLIHOST_SOURCES})
