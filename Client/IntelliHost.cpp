@@ -36,15 +36,13 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 #include "SocketSTL.h"
 #include "tinyxml2.h"
 
-enum Version
-{
-	MAJOR_VERSION = 0,
-	MINOR_VERSION = 0,
-	REVISION = 1
-};
-
-namespace
-{
+namespace {
+	enum Version
+	{
+		MAJOR_VERSION = 0,
+		MINOR_VERSION = 0,
+		REVISION = 1
+	};
 
 constexpr std::string_view strDigits = "0123456789";
 enum BufferSize
@@ -113,6 +111,7 @@ bool bIsCommand(const std::string_view strCommand)
 /// @return true if the command line is valid, false otherwise.
 bool bParseCommandLine(const int nArgc, char* ppszArgv[], CommandLine& cmdLine, std::string& strError)
 {
+	// At least the program name and one action are expected
 	if (nArgc < nMinArgCount)
 	{
 		strError = "an action is required";
@@ -124,6 +123,7 @@ bool bParseCommandLine(const int nArgc, char* ppszArgv[], CommandLine& cmdLine, 
 		const std::string_view strArgument{ppszArgv[nIndex]};
 		if (bIsCommand(strArgument))
 		{
+			// Only one action is allowed per invocation
 			if (!cmdLine._strCommand.empty())
 			{
 				strError = "only one action may be specified";
@@ -133,6 +133,7 @@ bool bParseCommandLine(const int nArgc, char* ppszArgv[], CommandLine& cmdLine, 
 			continue;
 		}
 
+		// Map the option to the field that will receive its value
 		std::string* pstrDestination = nullptr;
 		if (strArgument == "--input-file")
 		{
@@ -156,11 +157,13 @@ bool bParseCommandLine(const int nArgc, char* ppszArgv[], CommandLine& cmdLine, 
 			return false;
 		}
 
+		// Advance to the value; it must exist, be non-empty and not be another option
 		if (++nIndex == nArgc || ppszArgv[nIndex][0] == '\0' || std::string_view(ppszArgv[nIndex]).starts_with("--"))
 		{
 			strError = "parameter '" + std::string(strArgument) + "' requires a value";
 			return false;
 		}
+		// Reject duplicated options
 		if (!pstrDestination->empty())
 		{
 			strError = "parameter '" + std::string(strArgument) + "' may only be specified once";
@@ -169,6 +172,7 @@ bool bParseCommandLine(const int nArgc, char* ppszArgv[], CommandLine& cmdLine, 
 		*pstrDestination = ppszArgv[nIndex];
 	}
 
+	// Fall back to the TOKEN_ID environment variable when --token is absent
 	if (cmdLine._strToken.empty())
 	{
 		if (const char* pszToken = std::getenv("TOKEN_ID"); pszToken != nullptr)
@@ -177,6 +181,7 @@ bool bParseCommandLine(const int nArgc, char* ppszArgv[], CommandLine& cmdLine, 
 		}
 	}
 
+	// Validate required parameters; --generate-token needs none of them
 	if (cmdLine._strCommand.empty())
 	{
 		strError = "an action is required";
@@ -207,6 +212,7 @@ bool bParseCommandLine(const int nArgc, char* ppszArgv[], CommandLine& cmdLine, 
 /// @return true on success, false if the file is missing or malformed.
 bool bLoadMachineFromConfiguration(CommandLine& cmdLine, std::string& strError)
 {
+	// The configuration file is read from the current working directory
 	tinyxml2::XMLDocument xmlDocument;
 	if (xmlDocument.LoadFile("IntelliHost.xml") != tinyxml2::XML_SUCCESS)
 	{
@@ -221,6 +227,7 @@ bool bLoadMachineFromConfiguration(CommandLine& cmdLine, std::string& strError)
 		return false;
 	}
 
+	// Both elements must exist and have text content
 	const tinyxml2::XMLElement* pXmlServerIp = pXmlRoot->FirstChildElement("ServerIP");
 	const tinyxml2::XMLElement* pXmlServerPort = pXmlRoot->FirstChildElement("ServerPort");
 	if (pXmlServerIp == nullptr || pXmlServerIp->GetText() == nullptr || pXmlServerPort == nullptr ||
@@ -246,6 +253,8 @@ bool bParseEndpoint(std::string_view strValue, Endpoint& endpointParsed)
 		return false;
 	}
 
+	// Use the last ':' so hosts containing colons (e.g. IPv6) keep their prefix;
+	// both host and port must be non-empty
 	const auto nSeparator = strValue.rfind(':');
 	if (nSeparator == std::string_view::npos || nSeparator == 0 || nSeparator == strValue.size() - 1)
 	{
@@ -254,6 +263,7 @@ bool bParseEndpoint(std::string_view strValue, Endpoint& endpointParsed)
 
 	endpointParsed._strHost = strValue.substr(0, nSeparator);
 	endpointParsed._strPort = strValue.substr(nSeparator + 1);
+	// The port is valid only if it contains digits exclusively
 	return endpointParsed._strPort.find_first_not_of(strDigits) == std::string::npos;
 }
 
@@ -369,6 +379,7 @@ std::string strGetDateTime()
 {
 	char szDateTime[32] = { 0, };
 #ifdef _WIN32
+	// GetSystemTime returns UTC
 	SYSTEMTIME stNow;
 	GetSystemTime(&stNow);
 	const int nLength = snprintf(szDateTime, sizeof(szDateTime), "%04u-%02u-%02uT%02u:%02u:%02uZ",
@@ -378,6 +389,7 @@ std::string strGetDateTime()
 		return std::string();
 	}
 #else
+	// Convert the current time to UTC using the thread-safe gmtime_r
 	const time_t tmNow = time(nullptr);
 	struct tm tmUtc;
 	if (tmNow == static_cast<time_t>(-1) || gmtime_r(&tmNow, &tmUtc) == nullptr ||
@@ -401,18 +413,21 @@ std::string strGetDateTime()
 /// @return 0 on success, -1 on error.
 int main(const int nArgc, char* ppszArgv[])
 {
+	// --help is only valid as the sole argument
 	if (nArgc == nMinArgCount && std::string_view(ppszArgv[1]) == "--help")
 	{
 		vPrintUsage(ppszArgv[0]);
 		return 0;
 	}
 
+	// --version is only valid as the sole argument
 	if (nArgc == nMinArgCount && std::string_view(ppszArgv[1]) == "--version")
 	{
 		std::cout << ppszArgv[0] << "v" << MAJOR_VERSION << "." << MINOR_VERSION << "." << REVISION << std::endl;
 		return 0;
 	}
 
+	// Parse and validate the command line
 	CommandLine cmdLine;
 	std::string strError;
 	if (!bParseCommandLine(nArgc, ppszArgv, cmdLine, strError))
@@ -422,12 +437,14 @@ int main(const int nArgc, char* ppszArgv[])
 		return -1;
 	}
 
+	// Use the server from IntelliHost.xml when --machine was not given
 	if (cmdLine._strMachine.empty() && !bLoadMachineFromConfiguration(cmdLine, strError))
 	{
 		std::cerr << "error: " << strError << std::endl;
 		return -1;
 	}
 
+	// Validate the server address
 	Endpoint endpointMachine;
 	if (!bParseEndpoint(cmdLine._strMachine, endpointMachine))
 	{
@@ -435,6 +452,7 @@ int main(const int nArgc, char* ppszArgv[])
 		return -1;
 	}
 
+	// Token generation: hash "user : machine : UTC time" with SHA-256
 	if (nArgc == nMinArgCount && std::string_view(ppszArgv[1]) == "--generate-token")
 	{
 		const std::string strUserID = strGetUserID();
@@ -444,13 +462,14 @@ int main(const int nArgc, char* ppszArgv[])
 		const std::string strDateTime = strGetDateTime();
 		std::cout << "DateTime: " << strDateTime << std::endl;
 
+		// Only produce a token when every component was retrieved
 		if (!strUserID.empty() && !strMachineID.empty() && !strDateTime.empty())
 		{
 			std::string strRawData = strUserID + (" : ") + strMachineID + (" : ") + strDateTime;
 			SHA256 sha256;
 			sha256.update(strRawData);
-			const std::string strToken = SHA256::toString(sha256.digest());
-			std::cout << "TokenID: " << strToken << std::endl;
+			const std::string strTokenID = SHA256::toString(sha256.digest());
+			std::cout << "TokenID: " << strTokenID << std::endl;
 		}
 	}
 
