@@ -20,6 +20,12 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 #include <exception>
 #include <system_error>
 
+#if defined(_WIN32)
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+#endif
+
 class CSocketException : public std::exception
 {
 public:
@@ -33,6 +39,7 @@ public:
 	int _nError;
 };
 
+#if !defined(_WIN32) // Winsock/windows.h already define these
 #ifndef SOCKET
 typedef int SOCKET;
 #endif
@@ -47,6 +54,7 @@ typedef unsigned int UINT;
 
 #ifndef DWORD
 typedef unsigned long DWORD;
+#endif
 #endif
 
 /**

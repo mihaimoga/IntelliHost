@@ -22,6 +22,9 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 #include <vector>
 
 #ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN // keep windows.h from pulling in winsock.h (SocketSTL.h uses winsock2.h)
+#endif
 #define SECURITY_WIN32
 #include <windows.h>
 #include <secext.h>

@@ -13,6 +13,25 @@ or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 You should have received a copy of the GNU General Public License along with
 IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+#else
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
+
 #include "SocketSTL.h"
 
 #include <cerrno>
@@ -22,15 +41,60 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 #include <string>
 #include <vector>
 
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <sys/ioctl.h>
-#include <sys/socket.h>
-#include <unistd.h>
-
 namespace
 {
+// Platform error codes: Winsock reports WSAE* values, POSIX reports errno values.
+#if defined(_WIN32)
+constexpr int kErrConnRefused = WSAECONNREFUSED;
+constexpr int kErrInval = WSAEINVAL;
+constexpr int kErrBadSocket = WSAENOTSOCK;
+constexpr int kErrFault = WSAEFAULT;
+constexpr int kErrAddrInUse = WSAEADDRINUSE;
+constexpr int kErrNotConn = WSAENOTCONN;
+constexpr int kErrWouldBlock = WSAEWOULDBLOCK;
+constexpr int kErrAfNoSupport = WSAEAFNOSUPPORT;
+constexpr int kErrPipe = WSAESHUTDOWN;
+// Bind() and IOCtl() report a null pointer as WSAEFAULT on Windows
+constexpr int kErrBindArgs = WSAEFAULT;
+#else
+constexpr int kErrConnRefused = ECONNREFUSED;
+constexpr int kErrInval = EINVAL;
+constexpr int kErrBadSocket = EBADF;
+constexpr int kErrFault = EFAULT;
+constexpr int kErrAddrInUse = EADDRINUSE;
+constexpr int kErrNotConn = ENOTCONN;
+constexpr int kErrWouldBlock = EAGAIN;
+constexpr int kErrAfNoSupport = EAFNOSUPPORT;
+constexpr int kErrPipe = EPIPE;
+constexpr int kErrBindArgs = EINVAL;
+#endif
+
+const SOCKET kInvalidSocket = static_cast<SOCKET>(-1);
+
+bool IsWouldBlock(int nError) { return nError == kErrWouldBlock; }
+
+SOCKET RawSocket(int nType = SOCK_STREAM) { return ::socket(AF_INET, nType, 0); }
+
+void RawClose(SOCKET hSocket)
+{
+#if defined(_WIN32)
+    ::closesocket(hSocket);
+#else
+    ::close(hSocket);
+#endif
+}
+
+// True while the handle still refers to an open socket.
+bool IsOpenSocket(SOCKET hSocket)
+{
+#if defined(_WIN32)
+    int nType = 0, nLen = static_cast<int>(sizeof(nType));
+    return ::getsockopt(hSocket, SOL_SOCKET, SO_TYPE, reinterpret_cast<char*>(&nType), &nLen) == 0;
+#else
+    return ::fcntl(hSocket, F_GETFD) != -1;
+#endif
+}
+
 struct TestCase { const char* pszName; std::function<void()> fnBody; };
 
 std::vector<TestCase>& Registry() { static std::vector<TestCase> vecRegistry; return vecRegistry; }
@@ -100,13 +164,13 @@ void MakeTcpPair(CSocketSTL& objListener, CSocketSTL& objClient, CSocketSTL& obj
 
 TEST(Exception_StoresErrorCode)
 {
-    CSocketException ex(ECONNREFUSED);
-    CHECK(ex._nError == ECONNREFUSED);
+    CSocketException ex(kErrConnRefused);
+    CHECK(ex._nError == kErrConnRefused);
 }
 
 TEST(Exception_MessageForKnownError)
 {
-    CSocketException ex(ECONNREFUSED);
+    CSocketException ex(kErrConnRefused);
     std::string strMsg;
     CHECK(ex.GetErrorMessage(strMsg));
     CHECK(!strMsg.empty());
@@ -114,7 +178,7 @@ TEST(Exception_MessageForKnownError)
 
 TEST(Exception_HelpContextIsZeroed)
 {
-    CSocketException ex(EINVAL);
+    CSocketException ex(kErrInval);
     std::string strMsg;
     unsigned int nCtx = 123;
     CHECK(ex.GetErrorMessage(strMsg, &nCtx));
@@ -123,7 +187,7 @@ TEST(Exception_HelpContextIsZeroed)
 
 TEST(Exception_IsStdException)
 {
-    try { throw CSocketException(EINVAL); }
+    try { throw CSocketException(kErrInval); }
     catch (const std::exception&) { return; }
     CHECK(false);
 }
@@ -169,7 +233,7 @@ TEST(Socket_CreateIPv6)
 {
     CSocketSTL objSocket;
     try { objSocket.Create(false, true); }
-    catch (const CSocketException& ex) { if (ex._nError == EAFNOSUPPORT) return; throw; }
+    catch (const CSocketException& ex) { if (ex._nError == kErrAfNoSupport) return; throw; }
     sockaddr_in6 sinAddr{};
     int nLen = static_cast<int>(sizeof(sinAddr));
     // unbound socket: family must still be AF_INET6
@@ -186,39 +250,39 @@ TEST(Socket_CreateInvalidTypeThrows)
 
 TEST(Socket_AttachDetach)
 {
-    const int nFd = ::socket(AF_INET, SOCK_STREAM, 0);
-    CHECK(nFd >= 0);
+    const SOCKET nFd = RawSocket();
+    CHECK(nFd != kInvalidSocket);
     CSocketSTL objSocket;
     objSocket.Attach(nFd);
     CHECK(objSocket.IsCreated());
     CHECK(objSocket.Detach() == nFd);
     CHECK(!objSocket.IsCreated());
-    CHECK(objSocket.Detach() == -1);
-    ::close(nFd);
+    CHECK(objSocket.Detach() == kInvalidSocket);
+    RawClose(nFd);
 }
 
 TEST(Socket_AttachClosesPrevious)
 {
-    const int nFd1 = ::socket(AF_INET, SOCK_STREAM, 0);
-    const int nFd2 = ::socket(AF_INET, SOCK_STREAM, 0);
+    const SOCKET nFd1 = RawSocket();
+    const SOCKET nFd2 = RawSocket();
     CSocketSTL objSocket;
     objSocket.Attach(nFd1);
     objSocket.Attach(nFd2);
-    CHECK(::fcntl(nFd1, F_GETFD) == -1 && errno == EBADF);
+    CHECK(!IsOpenSocket(nFd1));
     CHECK(objSocket.Detach() == nFd2);
-    ::close(nFd2);
+    RawClose(nFd2);
 }
 
 TEST(Socket_DestructorClosesSocket)
 {
-    int nFd = -1;
+    SOCKET nFd = kInvalidSocket;
     {
         CSocketSTL objSocket;
         objSocket.Create();
         nFd = objSocket.Detach();
         objSocket.Attach(nFd);
     }
-    CHECK(::fcntl(nFd, F_GETFD) == -1 && errno == EBADF);
+    CHECK(!IsOpenSocket(nFd));
 }
 
 TEST(Socket_BindAddressAccessors)
@@ -247,8 +311,8 @@ TEST(Socket_SockOptOnInvalidSocketThrows)
 {
     CSocketSTL objSocket;
     int nV = 1, nLen = static_cast<int>(sizeof(nV));
-    CHECK_THROWS_ERR(objSocket.SetSockOpt(SO_REUSEADDR, &nV, nLen, SOL_SOCKET), EBADF);
-    CHECK_THROWS_ERR(objSocket.GetSockOpt(SO_REUSEADDR, &nV, &nLen, SOL_SOCKET), EBADF);
+    CHECK_THROWS_ERR(objSocket.SetSockOpt(SO_REUSEADDR, &nV, nLen, SOL_SOCKET), kErrBadSocket);
+    CHECK_THROWS_ERR(objSocket.GetSockOpt(SO_REUSEADDR, &nV, &nLen, SOL_SOCKET), kErrBadSocket);
 }
 
 TEST(Socket_IOCtlNonBlockingToggle)
@@ -257,7 +321,12 @@ TEST(Socket_IOCtlNonBlockingToggle)
     objSocket.Create();
     DWORD dwOn = 1;
     objSocket.IOCtl(FIONBIO, &dwOn);
-    int nFd = objSocket.Detach();
+#if defined(_WIN32)
+    // Winsock cannot query the blocking mode, so only verify that both transitions succeed.
+    DWORD dwOff = 0;
+    objSocket.IOCtl(FIONBIO, &dwOff);
+#else
+    SOCKET nFd = objSocket.Detach();
     CHECK((::fcntl(nFd, F_GETFL) & O_NONBLOCK) != 0);
     objSocket.Attach(nFd);
     DWORD dwOff = 0;
@@ -265,20 +334,21 @@ TEST(Socket_IOCtlNonBlockingToggle)
     nFd = objSocket.Detach();
     CHECK((::fcntl(nFd, F_GETFL) & O_NONBLOCK) == 0);
     objSocket.Attach(nFd);
+#endif
 }
 
 TEST(Socket_IOCtlNullArgumentThrows)
 {
     CSocketSTL objSocket;
     objSocket.Create();
-    CHECK_THROWS_ERR(objSocket.IOCtl(FIONBIO, nullptr), EFAULT);
+    CHECK_THROWS_ERR(objSocket.IOCtl(FIONBIO, nullptr), kErrFault);
 }
 
 TEST(Socket_IOCtlInvalidSocketThrows)
 {
     CSocketSTL objSocket;
     DWORD dwV = 1;
-    CHECK_THROWS_ERR(objSocket.IOCtl(FIONBIO, &dwV), EBADF);
+    CHECK_THROWS_ERR(objSocket.IOCtl(FIONBIO, &dwV), kErrBadSocket);
 }
 
 // ---------------------------------------------------------------- bind / names
@@ -301,8 +371,8 @@ TEST(Socket_BindInvalidArgumentsThrow)
     CSocketSTL objSocket;
     objSocket.Create();
     sockaddr_in sinAddr = Loopback();
-    CHECK_THROWS_ERR(objSocket.Bind(nullptr, static_cast<int>(sizeof(sinAddr))), EINVAL);
-    CHECK_THROWS_ERR(objSocket.Bind(AsAddr(sinAddr), 0), EINVAL);
+    CHECK_THROWS_ERR(objSocket.Bind(nullptr, static_cast<int>(sizeof(sinAddr))), kErrBindArgs);
+    CHECK_THROWS_ERR(objSocket.Bind(AsAddr(sinAddr), 0), kErrBindArgs);
 }
 
 TEST(Socket_BindAddressInUseThrows)
@@ -312,7 +382,7 @@ TEST(Socket_BindAddressInUseThrows)
     const unsigned short nPort = BindEphemeral(objA);
     objB.Create();
     sockaddr_in sinAddr = Loopback(nPort);
-    CHECK_THROWS_ERR(objB.Bind(AsAddr(sinAddr), static_cast<int>(sizeof(sinAddr))), EADDRINUSE);
+    CHECK_THROWS_ERR(objB.Bind(AsAddr(sinAddr), static_cast<int>(sizeof(sinAddr))), kErrAddrInUse);
 }
 
 TEST(Socket_GetPeerNameUnconnectedThrows)
@@ -321,7 +391,7 @@ TEST(Socket_GetPeerNameUnconnectedThrows)
     objSocket.Create();
     CSocketSTL::String sAddr;
     UINT nPeerPort = 0;
-    CHECK_THROWS_ERR(objSocket.GetPeerName(sAddr, nPeerPort), ENOTCONN);
+    CHECK_THROWS_ERR(objSocket.GetPeerName(sAddr, nPeerPort), kErrNotConn);
 }
 
 TEST(Socket_CreateAndBindWildcardIPv4)
@@ -350,7 +420,7 @@ TEST(Socket_CreateAndBindUsesBindAddress)
 TEST(Socket_CreateAndBindPortTooLargeThrows)
 {
     CSocketSTL objSocket;
-    CHECK_THROWS_ERR(objSocket.CreateAndBind(65536, SOCK_STREAM, AF_INET), EINVAL);
+    CHECK_THROWS_ERR(objSocket.CreateAndBind(65536, SOCK_STREAM, AF_INET), kErrInval);
     CHECK(!objSocket.IsCreated());
 }
 
@@ -425,8 +495,8 @@ TEST(Tcp_ConnectInvalidArgumentsThrow)
     CSocketSTL objSocket;
     objSocket.Create();
     sockaddr_in sinAddr = Loopback(1);
-    CHECK_THROWS_ERR(objSocket.Connect(nullptr, static_cast<int>(sizeof(sinAddr))), EINVAL);
-    CHECK_THROWS_ERR(objSocket.Connect(AsAddr(sinAddr), 0), EINVAL);
+    CHECK_THROWS_ERR(objSocket.Connect(nullptr, static_cast<int>(sizeof(sinAddr))), kErrInval);
+    CHECK_THROWS_ERR(objSocket.Connect(AsAddr(sinAddr), 0), kErrInval);
 }
 
 TEST(Tcp_ConnectRefusedThrows)
@@ -441,7 +511,7 @@ TEST(Tcp_ConnectRefusedThrows)
     CSocketSTL objSocket;
     objSocket.Create();
     sockaddr_in sinAddr = Loopback(nPort);
-    CHECK_THROWS_ERR(objSocket.Connect(AsAddr(sinAddr), static_cast<int>(sizeof(sinAddr))), ECONNREFUSED);
+    CHECK_THROWS_ERR(objSocket.Connect(AsAddr(sinAddr), static_cast<int>(sizeof(sinAddr))), kErrConnRefused);
 }
 
 TEST(Tcp_ListenNegativeBacklogUsesDefault)
@@ -456,7 +526,7 @@ TEST(Tcp_ListenNegativeBacklogUsesDefault)
 TEST(Tcp_ListenInvalidSocketThrows)
 {
     CSocketSTL objSocket;
-    CHECK_THROWS_ERR(objSocket.Listen(1), EBADF);
+    CHECK_THROWS_ERR(objSocket.Listen(1), kErrBadSocket);
 }
 
 TEST(Tcp_AcceptNonBlockingNoPendingThrows)
@@ -469,7 +539,7 @@ TEST(Tcp_AcceptNonBlockingNoPendingThrows)
     objSocket.IOCtl(FIONBIO, &dwOn);
     CSocketSTL objC;
     bool bThrown = false;
-    try { objSocket.Accept(objC); } catch (const CSocketException& ex) { bThrown = (ex._nError == EAGAIN || ex._nError == EWOULDBLOCK); }
+    try { objSocket.Accept(objC); } catch (const CSocketException& ex) { bThrown = IsWouldBlock(ex._nError); }
     CHECK(bThrown);
     CHECK(!objC.IsCreated());
 }
@@ -479,8 +549,8 @@ TEST(Tcp_ReceiveInvalidArgumentsThrow)
     CSocketSTL objListener, objClient, objServer;
     MakeTcpPair(objListener, objClient, objServer);
     char acBuf[4];
-    CHECK_THROWS_ERR(objServer.Receive(nullptr, 4), EINVAL);
-    CHECK_THROWS_ERR(objServer.Receive(acBuf, -1), EINVAL);
+    CHECK_THROWS_ERR(objServer.Receive(nullptr, 4), kErrInval);
+    CHECK_THROWS_ERR(objServer.Receive(acBuf, -1), kErrInval);
 }
 
 TEST(Tcp_ReceiveReturnsZeroOnPeerClose)
@@ -499,7 +569,7 @@ TEST(Tcp_ShutDownModes)
     objClient.ShutDown(1);
     char acBuf[4];
     CHECK(objServer.Receive(acBuf, sizeof(acBuf)) == 0); // EOF after send-side shutdown
-    CHECK_THROWS_ERR(objClient.Send("x", 1), EPIPE);
+    CHECK_THROWS_ERR(objClient.Send("x", 1), kErrPipe);
     objServer.ShutDown(2);
 }
 
@@ -507,21 +577,21 @@ TEST(Tcp_ShutDownInvalidHowThrows)
 {
     CSocketSTL objListener, objClient, objServer;
     MakeTcpPair(objListener, objClient, objServer);
-    CHECK_THROWS_ERR(objClient.ShutDown(-1), EINVAL);
-    CHECK_THROWS_ERR(objClient.ShutDown(3), EINVAL);
+    CHECK_THROWS_ERR(objClient.ShutDown(-1), kErrInval);
+    CHECK_THROWS_ERR(objClient.ShutDown(3), kErrInval);
 }
 
 TEST(Tcp_ShutDownNotConnectedThrows)
 {
     CSocketSTL objSocket;
     objSocket.Create();
-    CHECK_THROWS_ERR(objSocket.ShutDown(2), ENOTCONN);
+    CHECK_THROWS_ERR(objSocket.ShutDown(2), kErrNotConn);
 }
 
 TEST(Tcp_SendOnInvalidSocketThrows)
 {
     CSocketSTL objSocket;
-    CHECK_THROWS_ERR(objSocket.Send("x", 1), EBADF);
+    CHECK_THROWS_ERR(objSocket.Send("x", 1), kErrBadSocket);
 }
 
 TEST(Tcp_IsReadibleTimesOutWhenIdle)
@@ -534,20 +604,26 @@ TEST(Tcp_IsReadibleTimesOutWhenIdle)
 
 TEST(Poll_UncreatedSocketIsNeverReady)
 {
-    // poll() ignores negative descriptors, so an uncreated socket simply times out.
     CSocketSTL objSocket;
+#if defined(_WIN32)
+    // WSAPoll may either ignore INVALID_SOCKET or reject it; only a "ready" result is wrong.
+    try { CHECK(!objSocket.IsReadible(0)); } catch (const CSocketException&) {}
+    try { CHECK(!objSocket.IsWritable(0)); } catch (const CSocketException&) {}
+#else
+    // poll() ignores negative descriptors, so an uncreated socket simply times out.
     CHECK(!objSocket.IsReadible(0));
     CHECK(!objSocket.IsWritable(0));
+#endif
 }
 
 TEST(Poll_StaleDescriptorThrows)
 {
-    const int nFd = ::socket(AF_INET, SOCK_STREAM, 0);
-    ::close(nFd);
+    const SOCKET nFd = RawSocket();
+    RawClose(nFd);
     CSocketSTL objSocket;
     objSocket.Attach(nFd);
-    CHECK_THROWS_ERR((void)objSocket.IsReadible(0), EBADF);
-    CHECK_THROWS_ERR((void)objSocket.IsWritable(0), EBADF);
+    CHECK_THROWS_ERR((void)objSocket.IsReadible(0), kErrBadSocket);
+    CHECK_THROWS_ERR((void)objSocket.IsWritable(0), kErrBadSocket);
     (void)objSocket.Detach();
 }
 
@@ -611,11 +687,11 @@ TEST(Udp_SendToInvalidArgumentsThrow)
     objSocket.Create(true);
     sockaddr_in sinAddr = Loopback(9);
     const int nAddrLen = static_cast<int>(sizeof(sinAddr));
-    CHECK_THROWS_ERR(objSocket.SendTo(nullptr, 1, AsAddr(sinAddr), nAddrLen), EINVAL);
-    CHECK_THROWS_ERR(objSocket.SendTo("x", -1, AsAddr(sinAddr), nAddrLen), EINVAL);
-    CHECK_THROWS_ERR(objSocket.SendTo("x", 1, nullptr, nAddrLen), EINVAL);
-    CHECK_THROWS_ERR(objSocket.SendTo("x", 1, AsAddr(sinAddr), 0), EINVAL);
-    CHECK_THROWS_ERR(objSocket.SendTo("x", 1, 65536u, "127.0.0.1"), EINVAL);
+    CHECK_THROWS_ERR(objSocket.SendTo(nullptr, 1, AsAddr(sinAddr), nAddrLen), kErrInval);
+    CHECK_THROWS_ERR(objSocket.SendTo("x", -1, AsAddr(sinAddr), nAddrLen), kErrInval);
+    CHECK_THROWS_ERR(objSocket.SendTo("x", 1, nullptr, nAddrLen), kErrInval);
+    CHECK_THROWS_ERR(objSocket.SendTo("x", 1, AsAddr(sinAddr), 0), kErrInval);
+    CHECK_THROWS_ERR(objSocket.SendTo("x", 1, 65536u, "127.0.0.1"), kErrInval);
 }
 
 TEST(Udp_SendToUnresolvableHostThrows)
@@ -630,8 +706,8 @@ TEST(Udp_ReceiveFromInvalidArgumentsThrow)
     CSocketSTL objSocket;
     objSocket.Create(true);
     char acBuf[4];
-    CHECK_THROWS_ERR(objSocket.ReceiveFrom(nullptr, 4, nullptr, nullptr), EINVAL);
-    CHECK_THROWS_ERR(objSocket.ReceiveFrom(acBuf, -1, nullptr, nullptr), EINVAL);
+    CHECK_THROWS_ERR(objSocket.ReceiveFrom(nullptr, 4, nullptr, nullptr), kErrInval);
+    CHECK_THROWS_ERR(objSocket.ReceiveFrom(acBuf, -1, nullptr, nullptr), kErrInval);
 }
 
 TEST(Udp_ReceiveFromNonBlockingEmptyThrows)
@@ -644,7 +720,7 @@ TEST(Udp_ReceiveFromNonBlockingEmptyThrows)
     char acBuf[4];
     bool bThrown = false;
     try { (void)objSocket.ReceiveFrom(acBuf, sizeof(acBuf), nullptr, nullptr); }
-    catch (const CSocketException& ex) { bThrown = (ex._nError == EAGAIN || ex._nError == EWOULDBLOCK); }
+    catch (const CSocketException& ex) { bThrown = IsWouldBlock(ex._nError); }
     CHECK(bThrown);
 }
 
