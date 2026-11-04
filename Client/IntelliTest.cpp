@@ -514,6 +514,70 @@ TEST(Tcp_ConnectRefusedThrows)
     CHECK_THROWS_ERR(objSocket.Connect(AsAddr(sinAddr), static_cast<int>(sizeof(sinAddr))), kErrConnRefused);
 }
 
+TEST(Tcp_CreateAndConnectLoopback)
+{
+    CSocketSTL objListener, objServer;
+    objListener.Create();
+    const unsigned short nPort = BindEphemeral(objListener);
+    objListener.Listen(1);
+
+    CSocketSTL objClient;
+    objClient.CreateAndConnect("127.0.0.1", nPort);
+    CHECK(objClient.IsCreated());
+    objListener.Accept(objServer);
+
+    CSocketSTL::String sAddr;
+    UINT nPeerPort = 0;
+    objClient.GetPeerName(sAddr, nPeerPort);
+    CHECK(sAddr == "127.0.0.1");
+    CHECK(nPeerPort == nPort);
+
+    CHECK(objClient.Send("hi", 2) == 2);
+    CHECK(objServer.IsReadible(1000));
+    char acBuf[8]{};
+    CHECK(objServer.Receive(acBuf, sizeof(acBuf)) == 2);
+}
+
+TEST(Tcp_CreateAndConnectExplicitFamily)
+{
+    CSocketSTL objListener;
+    objListener.Create();
+    const unsigned short nPort = BindEphemeral(objListener);
+    objListener.Listen(1);
+
+    CSocketSTL objClient;
+    objClient.CreateAndConnect("127.0.0.1", nPort, SOCK_STREAM, AF_INET, 0);
+    CHECK(objClient.IsCreated());
+}
+
+TEST(Tcp_CreateAndConnectInvalidArgumentsThrow)
+{
+    CSocketSTL objSocket;
+    CHECK_THROWS_ERR(objSocket.CreateAndConnect(nullptr, 80), kErrInval);
+    CHECK_THROWS_ERR(objSocket.CreateAndConnect("127.0.0.1", 65536), kErrInval);
+    CHECK(!objSocket.IsCreated());
+}
+
+TEST(Tcp_CreateAndConnectBadHostThrows)
+{
+    CSocketSTL objSocket;
+    CHECK_THROWS(objSocket.CreateAndConnect("999.999.999.999", 80, SOCK_STREAM, AF_INET));
+    CHECK(!objSocket.IsCreated());
+}
+
+TEST(Tcp_CreateAndConnectRefusedThrows)
+{
+    unsigned short nPort;
+    {
+        CSocketSTL objTmp;
+        objTmp.Create();
+        nPort = BindEphemeral(objTmp);
+    }
+    CSocketSTL objSocket;
+    CHECK_THROWS_ERR(objSocket.CreateAndConnect("127.0.0.1", nPort, SOCK_STREAM, AF_INET), kErrConnRefused);
+    CHECK(!objSocket.IsCreated());
+}
+
 TEST(Tcp_ListenNegativeBacklogUsesDefault)
 {
     CSocketSTL objSocket;
