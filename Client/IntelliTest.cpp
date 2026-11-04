@@ -553,7 +553,7 @@ TEST(Tcp_CreateAndConnectExplicitFamily)
 TEST(Tcp_CreateAndConnectInvalidArgumentsThrow)
 {
     CSocketSTL objSocket;
-    CHECK_THROWS_ERR(objSocket.CreateAndConnect(nullptr, 80), kErrInval);
+    CHECK_THROWS_ERR(objSocket.CreateAndConnect("", 80), kErrInval);
     CHECK_THROWS_ERR(objSocket.CreateAndConnect("127.0.0.1", 65536), kErrInval);
     CHECK(!objSocket.IsCreated());
 }

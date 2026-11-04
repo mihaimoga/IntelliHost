@@ -57,14 +57,6 @@ typedef unsigned int UINT;
 #ifndef DWORD
 typedef unsigned long DWORD;
 #endif
-
-#ifndef LPCTSTR
-#ifdef _UNICODE
-typedef const wchar_t* LPCTSTR;
-#else
-typedef const char* LPCTSTR;
-#endif
-#endif
 #endif
 
 /**
@@ -228,14 +220,14 @@ public:
 
 	/**
 	 * Creates a socket and connects it to a host, trying each resolved address in turn.
-	 * @param pszHostAddress host name or IP address
+	 * @param sHostAddress host name or IP address
 	 * @param nHostPort remote port (0-65535)
 	 * @param nSocketType socket type (e.g. SOCK_STREAM)
 	 * @param nFamily address family (AF_UNSPEC, AF_INET or AF_INET6)
 	 * @param nProtocolType protocol, 0 for the default of the type
 	 * @throws CSocketException if arguments are invalid, resolution fails, or no address could be connected
 	 */
-	void CreateAndConnect(LPCTSTR pszHostAddress, UINT nHostPort, int nSocketType = SOCK_STREAM, int nFamily = AF_UNSPEC, int nProtocolType = 0);
+	void CreateAndConnect(const std::string& sHostAddress, UINT nHostPort, int nSocketType = SOCK_STREAM, int nFamily = AF_UNSPEC, int nProtocolType = 0);
 
 	/**
 	 * Accepts a pending connection.

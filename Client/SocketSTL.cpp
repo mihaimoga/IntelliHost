@@ -608,10 +608,10 @@ void CSocketSTL::CreateAndBind(const UINT nSocketPort, const int nSocketType, co
 	throw CSocketException(nLastError); // no candidate address worked
 }
 
-void CSocketSTL::CreateAndConnect(LPCTSTR pszHostAddress, const UINT nHostPort, const int nSocketType, const int nFamily, const int nProtocolType)
+void CSocketSTL::CreateAndConnect(const std::string& sHostAddress, const UINT nHostPort, const int nSocketType, const int nFamily, const int nProtocolType)
 {
 	// Ports are 16-bit; a host is mandatory
-	if (pszHostAddress == nullptr || nHostPort > 65535)
+	if (sHostAddress.empty() || nHostPort > 65535)
 		throw CSocketException(
 #if defined(_WIN32)
 			WSAEINVAL
@@ -620,9 +620,6 @@ void CSocketSTL::CreateAndConnect(LPCTSTR pszHostAddress, const UINT nHostPort, 
 #endif
 		);
 
-	std::string sHost;
-	for (LPCTSTR p = pszHostAddress; *p != 0; ++p)
-		sHost.push_back(static_cast<char>(*p));
 	const std::string sPort{ std::to_string(nHostPort) };
 
 	addrinfo stHints{};
@@ -631,7 +628,7 @@ void CSocketSTL::CreateAndConnect(LPCTSTR pszHostAddress, const UINT nHostPort, 
 	stHints.ai_protocol = nProtocolType;
 
 	addrinfo* pResult{ nullptr };
-	const int nError{ ::getaddrinfo(sHost.c_str(), sPort.c_str(), &stHints, &pResult) };
+	const int nError{ ::getaddrinfo(sHostAddress.c_str(), sPort.c_str(), &stHints, &pResult) };
 	if (nError != 0)
 		throw CSocketException(nError);
 	const std::unique_ptr<addrinfo, decltype(&::freeaddrinfo)> pLookup{ pResult, &::freeaddrinfo };
