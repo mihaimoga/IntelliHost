@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(IntelliHost LANGUAGES CXX)
+project(IntelliHostClient LANGUAGES CXX)
 
 set(INTELLIHOST_SOURCES
     IntelliHost.cpp
@@ -9,19 +9,19 @@ set(INTELLIHOST_SOURCES
     SHA256.cpp
 )
 
-add_executable(IntelliHost ${INTELLIHOST_SOURCES})
+add_executable(IntelliHostClient ${INTELLIHOST_SOURCES})
 
-target_compile_features(IntelliHost PRIVATE cxx_std_26)
+target_compile_features(IntelliHostClient PRIVATE cxx_std_26)
 
-target_include_directories(IntelliHost PRIVATE
+target_include_directories(IntelliHostClient PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 if(WIN32)
-    target_link_libraries(IntelliHost PRIVATE ws2_32)
+    target_link_libraries(IntelliHostClient PRIVATE ws2_32 secur32)
 endif()
 
-target_compile_options(IntelliHost PRIVATE
+target_compile_options(IntelliHostClient PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Wconversion>
 )
 
@@ -59,4 +59,4 @@ add_custom_target(RunIntelliTest
     COMMENT "Running IntelliTest unit tests"
     VERBATIM
 )
-add_dependencies(IntelliHost RunIntelliTest)
+add_dependencies(IntelliHostClient RunIntelliTest)

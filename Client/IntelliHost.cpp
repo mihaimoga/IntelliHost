@@ -426,14 +426,14 @@ int main(const int nArgc, char* ppszArgv[])
 	if (nArgc == nMinArgCount && std::string_view(ppszArgv[1]) == "--help")
 	{
 		PrintApplicationUsage(ppszArgv[0]);
-		return 0;
+		return EXIT_SUCCESS;
 	}
 
 	// --version is only valid as the sole argument
 	if (nArgc == nMinArgCount && std::string_view(ppszArgv[1]) == "--version")
 	{
 		std::cout << ppszArgv[0] << "v" << MAJOR_VERSION << "." << MINOR_VERSION << "." << REVISION << std::endl;
-		return 0;
+		return EXIT_SUCCESS;
 	}
 
 	// Parse and validate the command line
@@ -443,14 +443,14 @@ int main(const int nArgc, char* ppszArgv[])
 	{
 		std::cerr << "error: " << strError << std::endl;
 		PrintApplicationUsage(ppszArgv[0]);
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 	// Use the server from IntelliHost.xml when --machine was not given
 	if (cmdLine._strMachine.empty() && !LoadMachineFromConfiguration(cmdLine, strError))
 	{
 		std::cerr << "error: " << strError << std::endl;
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 	// Validate the server address
@@ -458,7 +458,7 @@ int main(const int nArgc, char* ppszArgv[])
 	if (!ParseEndpoint(cmdLine._strMachine, endpointMachine))
 	{
 		std::cerr << "error: machine must be in HOST:PORT form" << std::endl;
-		return -1;
+		return EXIT_FAILURE;
 	}
 
 	// Token generation: hash "user : machine : UTC time" with SHA-256
@@ -482,5 +482,5 @@ int main(const int nArgc, char* ppszArgv[])
 		}
 	}
 
-	return 0;
+	return EXIT_SUCCESS;
 }

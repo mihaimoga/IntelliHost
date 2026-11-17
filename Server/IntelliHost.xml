@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<IntelliHost>
+    <ServerPort>8080</ServerPort>
+    <HostName>localhost</HostName>
+    <HostPort>3306</HostPort>
+    <Database>MySQL_database</Database>
+    <Username>MySQL_username</Username>
+    <Password>MySQL_password</Password>
+</IntelliHost>
