@@ -414,7 +414,8 @@ namespace {
 /// @brief Program entry point.
 ///
 /// Handles --help and --version, parses the command line, resolves the server
-/// endpoint (from --machine or IntelliHost.xml) and prints the user and machine IDs.
+/// endpoint (from --machine or IntelliHost.xml), generates a token on request
+/// (--generate-token) and otherwise opens a TCP connection to the server.
 ///
 /// @param nArgc The number of arguments.
 /// @param ppszArgv The argument vector.
@@ -477,9 +478,32 @@ int main(const int nArgc, char* ppszArgv[])
 			SHA256 sha256;
 			sha256.update(strRawData);
 			const std::string& strTokenID = SHA256::toString(sha256.digest());
+
+			// Open a new TCP connection to the server
+			try
+			{
+				CSocketSTL objSocket;
+				objSocket.CreateAndConnect(endpointMachine._strHost, static_cast<UINT>(std::stoul(endpointMachine._strPort)), SOCK_STREAM);
+				std::cout << "Connected to " << endpointMachine._strHost << ":" << endpointMachine._strPort << "..." << std::endl;
+
+				// TODO: send the request and process the server response
+				objSocket.Close();
+			}
+			catch (const CSocketException& ex)
+			{
+				std::string strSocketError;
+				ex.GetErrorMessage(strSocketError);
+				std::cerr << "error: unable to connect to " << cmdLine._strMachine << ": " << strSocketError << std::endl;
+				return EXIT_FAILURE;
+			}
+			catch (const std::exception&)
+			{
+				std::cerr << "error: invalid port in " << cmdLine._strMachine << std::endl;
+				return EXIT_FAILURE;
+			}
 			std::cout << "TokenID: " << strTokenID << std::endl;
 		}
+		return EXIT_SUCCESS;
 	}
-
 	return EXIT_SUCCESS;
 }
