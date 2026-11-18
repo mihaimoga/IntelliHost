@@ -39,6 +39,22 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 #include "SocketSTL.h"
 #include "tinyxml2.h"
 
+#define STX 0x02  // Start of Text - marks the beginning of a data packet
+#define ETX 0x03  // End of Text - marks the end of a data packet
+#define EOT 0x04  // End of Transmission - signals end of communication
+#define ENQ 0x05  // Enquiry - requests acknowledgment from receiver
+#define ACK 0x06  // Acknowledgment - confirms successful receipt
+#define NAK 0x15  // Negative Acknowledgment - indicates transmission error
+
+#ifndef _WIN32
+#define ZeroMemory(p, n) memset((p), 0, (n))
+#endif
+
+#ifndef _WIN32
+#define CopyMemory(d, s, n) memcpy((d), (s), (n))
+#define MoveMemory(d, s, n) memmove((d), (s), (n))
+#endif
+
 namespace {
 	/// @brief Application version numbers.
 	enum Version
@@ -409,13 +425,170 @@ namespace {
 #endif
 		return std::string(szDateTime);
 	}
+
+	/// @brief Size in bytes of the buffers used to exchange framed packets.
+	const int MAX_BUFFER = 0x10000;
+	/// @brief Computes the Longitudinal Redundancy Check (XOR of all bytes).
+	///
+	/// @param buffer The data to checksum.
+	/// @param length The number of bytes in buffer.
+	/// @return The XOR of every byte in buffer.
+	inline unsigned char calcLRC(const unsigned char* buffer, const int length)
+	{
+		unsigned char nLRC = 0;
+		for (int i = 0; i < length; nLRC = nLRC ^ buffer[i], i++);
+		return nLRC;
+	}
+
+	/// @brief Receives one framed packet using the ENQ/ACK/NAK/EOT handshake.
+	///
+	/// Packet layout: STX, 2-byte length, payload, ETX, LRC. The packet is acknowledged
+	/// with ACK when the LRC matches, otherwise NAK is sent and up to 3 attempts are made.
+	///
+	/// @param pApplicationSocket The connected socket to read from.
+	/// @param pBuffer Receives the packet; must hold at least MAX_BUFFER bytes.
+	/// @param[in,out] nLength Receives the number of bytes read.
+	/// @param ReceiveENQ true to wait for ENQ first and answer it with ACK.
+	/// @param ReceiveEOT true to wait for EOT after the packet.
+	/// @return true if a valid packet was received and acknowledged, false otherwise.
+	bool ReadBuffer(CSocketSTL& pApplicationSocket, unsigned char* pBuffer, int& nLength, const bool ReceiveENQ, const bool ReceiveEOT)
+	{
+		char nReturn = ACK;
+
+		try
+		{
+			// nIndex: bytes in the last read, nCount: number of attempts made
+			int nIndex = 0;
+			int nCount = 0;
+			if (ReceiveENQ)
+			{
+				nLength = MAX_BUFFER;
+				if (pApplicationSocket.IsReadible(1000) &&
+					((nLength = pApplicationSocket.Receive(pBuffer, nLength)) > 0) &&
+					(ENQ == pBuffer[nLength - 1]))
+				{
+					// TRACE(_T("ENQ Received\n"));
+					unsigned char chACK = ACK;
+					const int nSize = pApplicationSocket.Send(&chACK, sizeof(chACK));
+					// TRACE(_T("ACK Sent\n"));
+				}
+				else
+					return false;
+			}
+			// Read the packet; the last byte is the LRC, checked over the payload that follows the 3-byte header
+			nLength = 0;
+			do {
+				while (pApplicationSocket.IsReadible(1000) &&
+					((nIndex = pApplicationSocket.Receive(pBuffer + nIndex, MAX_BUFFER - nLength)) > 0))
+				{
+					nLength += nIndex;
+					// TRACE(_T("Buffer Received %s\n"), dumpHEX(pBuffer, nLength).c_str());
+					nReturn = (pBuffer[nLength - 1] == calcLRC(&pBuffer[3], (nLength - 5))) ? ACK : NAK;
+				}
+				const int nSize = pApplicationSocket.Send(&nReturn, sizeof(nReturn));
+				// TRACE(_T("%s Sent\n"), ((ACK == nReturn) ? _T("ACK") : _T("NAK")));
+			} while ((ACK != nReturn) && (++nCount < 3));
+			if (ReceiveEOT)
+			{
+				unsigned char chEOT = ACK;
+				if (pApplicationSocket.IsReadible(1000) &&
+					((nLength = pApplicationSocket.Receive(&chEOT, sizeof(chEOT))) > 0) &&
+					(EOT == chEOT))
+				{
+					// TRACE(_T("EOT Received\n"));
+				}
+				else
+					return false;
+			}
+		}
+		catch (CSocketException& ex)
+		{
+			std::string strError;
+			ex.GetErrorMessage(strError);
+			std::cerr << "ReadBuffer error: " << strError << std::endl;
+			return false;
+		}
+		// TRACE(_T("ReadBuffer: %s\n"), ((ACK == nReturn) ? _T("true") : _T("false")));
+		return (ACK == nReturn);
+	}
+
+	/// @brief Sends one framed packet using the ENQ/ACK/NAK/EOT handshake.
+	///
+	/// Wraps the payload as STX, 2-byte length, payload, ETX, LRC and resends it until
+	/// the peer answers ACK, up to 3 retries.
+	///
+	/// @param pApplicationSocket The connected socket to write to.
+	/// @param pBuffer The payload to send.
+	/// @param nLength The payload size in bytes; must not exceed MAX_BUFFER - 5.
+	/// @param SendENQ true to send ENQ first and wait for ACK.
+	/// @param SendEOT true to send EOT after the packet.
+	/// @return true if the peer acknowledged the packet, false otherwise.
+	bool WriteBuffer(CSocketSTL& pApplicationSocket, const unsigned char* pBuffer, const int nLength, const bool SendENQ, const bool SendEOT)
+	{
+		unsigned char nReturn = ACK;
+		unsigned char pPacket[MAX_BUFFER] = { 0, };
+
+		try
+		{
+			int nCount = 0;
+			// ASSERT(nLength <= (sizeof(pPacket) - 5));
+			if (SendENQ && pApplicationSocket.IsWritable(1000))
+			{
+				unsigned char chENQ = ENQ;
+				// TRACE(_T("ENQ Sent\n"));
+				const int nSize = pApplicationSocket.Send(&chENQ, sizeof(chENQ));
+				ZeroMemory(pPacket, sizeof(pPacket));
+				nCount = MAX_BUFFER;
+				if (((nCount = pApplicationSocket.Receive(pPacket, nCount)) > 0) &&
+					(ACK == pPacket[nCount - 1]))
+				{
+					// TRACE(_T("ACK Received\n"));
+					nCount = 0;
+				}
+				else
+					return false;
+			}
+			// Build the packet: STX, length (big-endian), payload, ETX, LRC
+			ZeroMemory(pPacket, sizeof(pPacket));
+			CopyMemory(&pPacket[3], pBuffer, nLength);
+			pPacket[0] = STX;
+			pPacket[1] = static_cast<unsigned char>((char)(nLength / 0x100));
+			pPacket[2] = static_cast<unsigned char>((char)(nLength % 0x100));
+			pPacket[3 + nLength] = ETX;
+			pPacket[4 + nLength] = calcLRC(pBuffer, nLength);
+			// Retransmit until the peer answers ACK
+			do {
+				if (pApplicationSocket.Send(pPacket, (5 + nLength)) == (5 + nLength))
+				{
+					// TRACE(_T("Buffer Sent %s\n"), dumpHEX(pPacket, (5 + nLength)).c_str());
+					const int nSize = pApplicationSocket.Receive(&nReturn, sizeof(nReturn));
+					// TRACE(_T("%s Received\n"), ((ACK == nReturn) ? _T("ACK") : _T("NAK")));
+				}
+			} while ((nReturn != ACK) && (++nCount <= 3));
+			if (SendEOT && pApplicationSocket.IsWritable(1000))
+			{
+				unsigned char chEOT = EOT;
+				// TRACE(_T("EOT Sent\n"));
+				const int nSize = pApplicationSocket.Send(&chEOT, sizeof(chEOT));
+			}
+		}
+		catch (CSocketException& ex)
+		{
+			std::string strError;
+			ex.GetErrorMessage(strError);
+			std::cerr << "WriteBuffer error: " << strError << std::endl;
+			return false;
+		}
+		// TRACE(_T("WriteBuffer: %s\n"), ((ACK == nReturn) ? _T("true") : _T("false")));
+		return (ACK == nReturn);
+	}
 } // namespace
 
 /// @brief Program entry point.
 ///
 /// Handles --help and --version, parses the command line, resolves the server
 /// endpoint (from --machine or IntelliHost.xml), generates a token on request
-/// (--generate-token) and otherwise opens a TCP connection to the server.
+/// (--generate-token) and sends the "IntelliHost" protocol identifier to the server.
 ///
 /// @param nArgc The number of arguments.
 /// @param ppszArgv The argument vector.
@@ -479,23 +652,31 @@ int main(const int nArgc, char* ppszArgv[])
 			sha256.update(strRawData);
 			const std::string& strTokenID = SHA256::toString(sha256.digest());
 
-			// Open a new TCP connection to the server
+			// Open a new TCP connection to the server and announce the protocol
 			try
 			{
 				CSocketSTL objSocket;
 				objSocket.CreateAndConnect(endpointMachine._strHost, static_cast<UINT>(std::stoul(endpointMachine._strPort)), SOCK_STREAM);
 				std::cout << "Connected to " << endpointMachine._strHost << ":" << endpointMachine._strPort << "..." << std::endl;
 
-				// TODO: send the request and process the server response
+				// The terminating null is sent too, so the server can read it as a C string
+				const std::string strCommand = "IntelliHost";
+				const int nLength = static_cast<int>(strCommand.length()) + 1;
+				if (WriteBuffer(objSocket, (unsigned char*)strCommand.c_str(), nLength, true, false))
+				{
+					std::cout << "Protocol acknowledged!" << std::endl;
+				}
 				objSocket.Close();
 			}
+			// Socket failures (resolution, refused connection, ...) carry a system error message
 			catch (const CSocketException& ex)
 			{
-				std::string strSocketError;
-				ex.GetErrorMessage(strSocketError);
-				std::cerr << "error: unable to connect to " << cmdLine._strMachine << ": " << strSocketError << std::endl;
+				std::string strError;
+				ex.GetErrorMessage(strError);
+				std::cerr << "client error: " << strError << std::endl;
 				return EXIT_FAILURE;
 			}
+			// std::stoul throws when the port is not numeric or out of range
 			catch (const std::exception&)
 			{
 				std::cerr << "error: invalid port in " << cmdLine._strMachine << std::endl;
