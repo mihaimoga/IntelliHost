@@ -51,9 +51,6 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 
 #ifndef _WIN32
 #define ZeroMemory(p, n) memset((p), 0, (n))
-#endif
-
-#ifndef _WIN32
 #define CopyMemory(d, s, n) memcpy((d), (s), (n))
 #define MoveMemory(d, s, n) memmove((d), (s), (n))
 #endif
@@ -196,6 +193,8 @@ namespace {
 					// TRACE(_T("ENQ Received\n"));
 					unsigned char chACK = ACK;
 					const int nSize = pApplicationSocket.Send(&chACK, sizeof(chACK));
+					if (nSize != 1)
+						return false;
 					// TRACE(_T("ACK Sent\n"));
 				}
 				else
@@ -212,6 +211,8 @@ namespace {
 					nReturn = (pBuffer[nLength - 1] == calcLRC(&pBuffer[3], (nLength - 5))) ? ACK : NAK;
 				}
 				const int nSize = pApplicationSocket.Send(&nReturn, sizeof(nReturn));
+				if (nSize != 1)
+					return false;
 				// TRACE(_T("%s Sent\n"), ((ACK == nReturn) ? _T("ACK") : _T("NAK")));
 			} while ((ACK != nReturn) && (++nCount < 3));
 			if (ReceiveEOT)
@@ -248,7 +249,8 @@ namespace {
 	/// @param nLength The payload size in bytes; must not exceed MAX_BUFFER - 5.
 	/// @param SendENQ true to send ENQ first and wait for ACK.
 	/// @param SendEOT true to send EOT after the packet.
-	/// @return true if the peer acknowledged the packet, false otherwise.
+	/// @return true if the peer acknowledged the packet; false on NAK after all retries,
+	/// a missing ACK, a short send/receive or a socket error.
 	bool WriteBuffer(CSocketSTL& pApplicationSocket, const unsigned char* pBuffer, const int nLength, const bool SendENQ, const bool SendEOT)
 	{
 		unsigned char nReturn = ACK;
@@ -263,6 +265,8 @@ namespace {
 				unsigned char chENQ = ENQ;
 				// TRACE(_T("ENQ Sent\n"));
 				const int nSize = pApplicationSocket.Send(&chENQ, sizeof(chENQ));
+				if (nSize != 1)
+					return false;
 				ZeroMemory(pPacket, sizeof(pPacket));
 				nCount = MAX_BUFFER;
 				if (((nCount = pApplicationSocket.Receive(pPacket, nCount)) > 0) &&
@@ -288,6 +292,8 @@ namespace {
 				{
 					// TRACE(_T("Buffer Sent %s\n"), dumpHEX(pPacket, (5 + nLength)).c_str());
 					const int nSize = pApplicationSocket.Receive(&nReturn, sizeof(nReturn));
+					if (nSize != 1)
+						return false;
 					// TRACE(_T("%s Received\n"), ((ACK == nReturn) ? _T("ACK") : _T("NAK")));
 				}
 			} while ((nReturn != ACK) && (++nCount <= 3));
@@ -296,6 +302,8 @@ namespace {
 				unsigned char chEOT = EOT;
 				// TRACE(_T("EOT Sent\n"));
 				const int nSize = pApplicationSocket.Send(&chEOT, sizeof(chEOT));
+				if (nSize != 1)
+					return false;
 			}
 		}
 		catch (CSocketException& ex)
@@ -315,7 +323,13 @@ namespace {
     /// @brief Serves a single client connection.
     ///
     /// Runs on its own thread and owns the socket, which is closed when the client
-    /// disconnects or a socket error occurs.
+    /// disconnects or a socket error occurs. The conversation is a sequence of framed
+    /// packets, each acknowledged with ENQ/ACK:
+    ///   1. client sends "IntelliHost" (protocol identifier), server replies "OK";
+    ///   2. client sends the command "GenerateToken", server replies "OK";
+    ///   3. client sends UserID, MachineID and DateTime;
+    ///   4. server replies with the SHA-256 TokenID of "UserID : MachineID : DateTime".
+    /// The sequence stops silently at the first step that fails.
     ///
     /// @param pSocket The accepted connection; ownership is transferred to this function.
     void HandleClient(std::unique_ptr<CSocketSTL> pSocket)
@@ -336,10 +350,70 @@ namespace {
         	if (ReadBuffer(objSocket, pBuffer, nLength, true, false))
         	{
         		// The payload starts after the STX and 2-byte length header
-        		const std::string strCommand = (char*) &pBuffer[3];
-        		if (strCommand == "IntelliHost")
+        		const std::string strProtocol = (char*) &pBuffer[3];
+        		if (strProtocol == "IntelliHost")
         		{
-        			std::cout << "Protocol acknowledged!" << std::endl;
+        			// Acknowledge the protocol; the terminating null is sent too
+        			const std::string strOK = "OK";
+        			nLength = static_cast<int>(strOK.length()) + 1;
+        			if (WriteBuffer(objSocket, (unsigned char*)strOK.c_str(), nLength, true, false))
+        			{
+        				std::cout << "Protocol acknowledged!" << std::endl;
+
+        				int nLength = sizeof(pBuffer);
+        				ZeroMemory(pBuffer, sizeof(pBuffer));
+        				if (ReadBuffer(objSocket, pBuffer, nLength, true, false))
+        				{
+        					// Next packet: the command to execute
+        					const std::string strCommand = (char*) &pBuffer[3];
+        					if (strCommand == "GenerateToken")
+        					{
+        						nLength = static_cast<int>(strOK.length()) + 1;
+        						if (WriteBuffer(objSocket, (unsigned char*)strOK.c_str(), nLength, true, false))
+        						{
+        							std::cout << "Command received: GenerateToken!" << std::endl;
+
+        							nLength = sizeof(pBuffer);
+        							ZeroMemory(pBuffer, sizeof(pBuffer));
+        							if (ReadBuffer(objSocket, pBuffer, nLength, true, false))
+        							{
+        								// The next three packets are the token components: user, machine and UTC time
+        								const std::string strUserID = (char*) &pBuffer[3];
+ 										std::cout << "UserID: " << strUserID << std::endl;
+
+        								nLength = sizeof(pBuffer);
+        								ZeroMemory(pBuffer, sizeof(pBuffer));
+        								if (ReadBuffer(objSocket, pBuffer, nLength, true, false))
+        								{
+        									const std::string strMachineID = (char*) &pBuffer[3];
+ 											std::cout << "MachineID: " << strMachineID << std::endl;
+
+        									nLength = sizeof(pBuffer);
+        									ZeroMemory(pBuffer, sizeof(pBuffer));
+        									if (ReadBuffer(objSocket, pBuffer, nLength, true, false))
+        									{
+        										const std::string strDateTime = (char*) &pBuffer[3];
+        										std::cout << "DateTime: " << strDateTime << std::endl;
+
+        										// Same recipe as the client's local token: SHA-256 of "user : machine : UTC time"
+        										std::string strRawData = strUserID + (" : ") + strMachineID + (" : ") + strDateTime;
+        										SHA256 sha256;
+        										sha256.update(strRawData);
+        										const std::string& strTokenID = SHA256::toString(sha256.digest());
+
+        										// Send the token back to the client
+        										nLength = static_cast<int>(strTokenID.length()) + 1;
+        										if (WriteBuffer(objSocket, (unsigned char*)strTokenID.c_str(), nLength, true, false))
+        										{
+        											std::cout << "TokenID: " << strTokenID << std::endl;
+        										}
+        									}
+        								}
+       								}
+        						}
+        					}
+        				}
+        			}
         		}
         	}
         }
@@ -363,7 +437,7 @@ namespace {
 /// @param nArgc The number of arguments (unused).
 /// @param ppszArgv The argument vector (unused).
 /// @return EXIT_FAILURE on a configuration or socket error.
-int main(const int nArgc, char* ppszArgv[])
+int main(const int /* nArgc */, char* /* ppszArgv */[])
 {
     std::string strError;
     std::string strServerPort;

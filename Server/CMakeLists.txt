@@ -19,3 +19,7 @@ if(WIN32)
 else()
     target_link_libraries(IntelliHostServer PRIVATE Threads::Threads)
 endif()
+
+target_compile_options(IntelliHostServer PRIVATE
+        $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Wconversion>
+)
