@@ -350,13 +350,13 @@ namespace {
         	if (ReadBuffer(objSocket, pBuffer, nLength, true, false))
         	{
         		// The payload starts after the STX and 2-byte length header
-        		const std::string strProtocol = (char*) &pBuffer[3];
+        		const std::string strProtocol = reinterpret_cast<char *>(&pBuffer[3]);
         		if (strProtocol == "IntelliHost")
         		{
         			// Acknowledge the protocol; the terminating null is sent too
         			const std::string strOK = "OK";
         			nLength = static_cast<int>(strOK.length()) + 1;
-        			if (WriteBuffer(objSocket, (unsigned char*)strOK.c_str(), nLength, true, false))
+        			if (WriteBuffer(objSocket, reinterpret_cast<const unsigned char *>(strOK.c_str()), nLength, true, false))
         			{
         				std::cout << "Protocol acknowledged!" << std::endl;
 
@@ -365,11 +365,11 @@ namespace {
         				if (ReadBuffer(objSocket, pBuffer, nLength, true, false))
         				{
         					// Next packet: the command to execute
-        					const std::string strCommand = (char*) &pBuffer[3];
+        					const std::string strCommand = reinterpret_cast<char *>(&pBuffer[3]);
         					if (strCommand == "GenerateToken")
         					{
         						nLength = static_cast<int>(strOK.length()) + 1;
-        						if (WriteBuffer(objSocket, (unsigned char*)strOK.c_str(), nLength, true, false))
+        						if (WriteBuffer(objSocket, reinterpret_cast<const unsigned char *>(strOK.c_str()), nLength, true, false))
         						{
         							std::cout << "Command received: GenerateToken!" << std::endl;
 
@@ -378,21 +378,21 @@ namespace {
         							if (ReadBuffer(objSocket, pBuffer, nLength, true, false))
         							{
         								// The next three packets are the token components: user, machine and UTC time
-        								const std::string strUserID = (char*) &pBuffer[3];
+        								const std::string strUserID = reinterpret_cast<char *>(&pBuffer[3]);
  										std::cout << "UserID: " << strUserID << std::endl;
 
         								nLength = sizeof(pBuffer);
         								ZeroMemory(pBuffer, sizeof(pBuffer));
         								if (ReadBuffer(objSocket, pBuffer, nLength, true, false))
         								{
-        									const std::string strMachineID = (char*) &pBuffer[3];
+        									const std::string strMachineID = reinterpret_cast<char *>(&pBuffer[3]);
  											std::cout << "MachineID: " << strMachineID << std::endl;
 
         									nLength = sizeof(pBuffer);
         									ZeroMemory(pBuffer, sizeof(pBuffer));
         									if (ReadBuffer(objSocket, pBuffer, nLength, true, false))
         									{
-        										const std::string strDateTime = (char*) &pBuffer[3];
+        										const std::string strDateTime = reinterpret_cast<char *>(&pBuffer[3]);
         										std::cout << "DateTime: " << strDateTime << std::endl;
 
         										// Same recipe as the client's local token: SHA-256 of "user : machine : UTC time"
@@ -403,7 +403,7 @@ namespace {
 
         										// Send the token back to the client
         										nLength = static_cast<int>(strTokenID.length()) + 1;
-        										if (WriteBuffer(objSocket, (unsigned char*)strTokenID.c_str(), nLength, true, true))
+        										if (WriteBuffer(objSocket, reinterpret_cast<const unsigned char *>(strTokenID.c_str()), nLength, true, true))
         										{
         											std::cout << "TokenID: " << strTokenID << std::endl;
         										}

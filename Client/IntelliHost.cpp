@@ -667,14 +667,14 @@ int main(const int nArgc, char* ppszArgv[])
 				// The terminating null is sent too, so the server can read it as a C string
 				const std::string strProtocol = "IntelliHost";
 				int nLength = static_cast<int>(strProtocol.length()) + 1;
-				if (WriteBuffer(objSocket, (unsigned char*)strProtocol.c_str(), nLength, true, false))
+				if (WriteBuffer(objSocket, reinterpret_cast<const unsigned char *>(strProtocol.c_str()), nLength, true, false))
 				{
 					unsigned char pBuffer[MAX_BUFFER] = { 0, };
 					nLength = sizeof(pBuffer);
 					ZeroMemory(pBuffer, sizeof(pBuffer));
 					if (ReadBuffer(objSocket, pBuffer, nLength, true, false))
 					{
-						const std::string strOK = (char*) &pBuffer[3];
+						const std::string strOK = reinterpret_cast<char *>(&pBuffer[3]);
 						if (strOK == "OK")
 						{
 							std::cout << "Protocol acknowledged!" << std::endl;
@@ -682,33 +682,33 @@ int main(const int nArgc, char* ppszArgv[])
 							// Ask the server to generate a token
 							const std::string strCommand = "GenerateToken";
 							nLength = static_cast<int>(strCommand.length()) + 1;
-							if (WriteBuffer(objSocket, (unsigned char*)strCommand.c_str(), nLength, true, false))
+							if (WriteBuffer(objSocket, reinterpret_cast<const unsigned char *>(strCommand.c_str()), nLength, true, false))
 							{
 								nLength = sizeof(pBuffer);
 								ZeroMemory(pBuffer, sizeof(pBuffer));
 								if (ReadBuffer(objSocket, pBuffer, nLength, true, false))
 								{
-									const std::string strOK1 = (char*) &pBuffer[3];
+									const std::string strOK1 = reinterpret_cast<char *>(&pBuffer[3]);
 									if (strOK1 == "OK")
 									{
 										std::cout << "Command sent!" << std::endl;
 
 										// Send the token components, one packet each
 										nLength = static_cast<int>(strUserID.length()) + 1;
-										if (WriteBuffer(objSocket, (unsigned char*)strUserID.c_str(), nLength, true, false))
+										if (WriteBuffer(objSocket, reinterpret_cast<const unsigned char *>(strUserID.c_str()), nLength, true, false))
 										{
 											nLength = static_cast<int>(strMachineID.length()) + 1;
-											if (WriteBuffer(objSocket, (unsigned char*)strMachineID.c_str(), nLength, true, false))
+											if (WriteBuffer(objSocket, reinterpret_cast<const unsigned char *>(strMachineID.c_str()), nLength, true, false))
 											{
 												nLength = static_cast<int>(strDateTime.length()) + 1;
-												if (WriteBuffer(objSocket, (unsigned char*)strDateTime.c_str(), nLength, true, false))
+												if (WriteBuffer(objSocket, reinterpret_cast<const unsigned char *>(strDateTime.c_str()), nLength, true, false))
 												{
 													nLength = sizeof(pBuffer);
 													ZeroMemory(pBuffer, sizeof(pBuffer));
 													if (ReadBuffer(objSocket, pBuffer, nLength, true, true))
 													{
 														// The server answers with the computed token
-														const std::string strTokenID = (char*) &pBuffer[3];
+														const std::string strTokenID = reinterpret_cast<char *>(&pBuffer[3]);
 														std::cout << "TokenID: " << strTokenID << std::endl;
 													}
 												}
