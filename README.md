@@ -12,7 +12,7 @@ IntelliHost is a simpler, flexible, lower-cost SharePoint alternative. It consis
 | `Client/` | `IntelliHostClient` command-line tool and `IntelliTest` socket unit tests |
 | `IntelliHost.sql` | MySQL schema (`token`, `filename`, `filedata`) |
 
-Both programs share `SocketSTL` (cross-platform socket wrapper), `tinyxml2` (configuration) and `SHA256` from `Client/`.
+Both programs build on Linux and Windows and share `SocketSTL` (cross-platform socket wrapper), `tinyxml2` (configuration) and `SHA256` from `Client/`.
 
 ## Building
 
@@ -24,11 +24,13 @@ cmake --build build
 ctest --test-dir build      # runs the IntelliTest socket tests
 ```
 
+On Windows the targets link `ws2_32` and `secur32` automatically. The CMake files request `cxx_std_26`, so use a recent compiler (and CMake 3.30+ for MSVC).
+
 A CLion project is included, with Debug and Release CMake profiles (`.idea/cmake.xml`).
 
 ## Configuration
 
-Both programs read `IntelliHost.xml` from the **current working directory**; CMake copies the Client one next to its binary.
+Both programs read `IntelliHost.xml` from the **current working directory**. CMake copies the Client file next to `IntelliHostClient`; copy `Server/IntelliHost.xml` next to `IntelliHostServer` (or run it from `Server/`) and edit it.
 
 **Server** (`Server/IntelliHost.xml`): every element is required.
 
@@ -43,7 +45,7 @@ Both programs read `IntelliHost.xml` from the **current working directory**; CMa
 </IntelliHost>
 ```
 
-`ServerPort` is the port the server listens on; the other elements describe the MySQL database. The server prints the loaded values, including the password, at startup.
+`ServerPort` is the port the server listens on; the other elements describe the MySQL database. The server prints the loaded values, including the password, at startup, so avoid sharing its console output.
 
 **Client** (`Client/IntelliHost.xml`):
 
@@ -75,7 +77,7 @@ Start the server, then run the client:
 
 ## Protocol
 
-The server listens on `ServerPort` and serves each accepted connection on its own detached thread.
+The server listens on `ServerPort` (IPv4, TCP) and serves each accepted connection on its own detached thread. Reads wait up to 1 second for data and a failed packet is retried up to 3 times.
 
 Every message is a framed packet:
 
@@ -94,7 +96,7 @@ Token generation conversation:
 | 3 | user ID, machine ID, UTC date and time (three packets) | |
 | 4 | | `TokenID` |
 
-The token is the SHA-256 of `UserID : MachineID : DateTime`.
+The server sends the token with a trailing `EOT`, which the client waits for to end the exchange. The token is the SHA-256 of `UserID : MachineID : DateTime`.
 
 ## Database
 

@@ -141,6 +141,7 @@ CSocketException::CSocketException(int nError) noexcept : _nError{ nError }
  */
 bool CSocketException::GetErrorMessage(std::string& strError, unsigned int* pnHelpContext) const
 {
+	// Help contexts are an MFC concept; keep the signature but always report none
 	if (pnHelpContext != nullptr)
 		*pnHelpContext = 0;
 
@@ -216,6 +217,7 @@ namespace
 	void EnsureSocketsInitialized() noexcept
 	{
 #if defined(_WIN32)
+		// Function-local static: constructed on first use, destroyed at process exit
 		static const WinsockInit s_Init;
 #endif
 	}
@@ -310,6 +312,7 @@ void CSocketSTL::GetPeerName(String& sPeerAddress, UINT& nPeerPort, int /*nAddre
  */
 void CSocketSTL::GetSockName(String& sSocketAddress, UINT& nSocketPort, int /*nAddressToStringFlags*/) const
 {
+	// Same approach as GetPeerName, but for the local endpoint
 	sockaddr_storage stSockAddr{};
 	int nSockAddrLen{ static_cast<int>(sizeof(stSockAddr)) };
 	GetSockName(reinterpret_cast<SOCKADDR*>(&stSockAddr), &nSockAddrLen);
@@ -344,6 +347,7 @@ void CSocketSTL::GetPeerName(SOCKADDR* pSockAddr, int* pSockAddrLen) const
 void CSocketSTL::GetSockName(SOCKADDR* pSockAddr, int* pSockAddrLen) const
 {
 	SockLen nLen{ static_cast<SockLen>(*pSockAddrLen) };
+	// The kernel updates nLen with the real address size
 	if (getsockname(_hSocket, pSockAddr, &nLen) != 0)
 		throw CSocketException(LastSocketError());
 	*pSockAddrLen = static_cast<int>(nLen);
@@ -360,6 +364,7 @@ void CSocketSTL::GetSockName(SOCKADDR* pSockAddr, int* pSockAddrLen) const
  */
 void CSocketSTL::SetSockOpt(int nOptionName, const void* pOptionValue, int nOptionLen, int nLevel) const
 {
+	// Winsock takes the option value as const char*
 	if (setsockopt(_hSocket, nLevel, nOptionName, static_cast<const char*>(pOptionValue), static_cast<SockLen>(nOptionLen)) != 0)
 		throw CSocketException(LastSocketError());
 }
@@ -439,6 +444,7 @@ void CSocketSTL::Create(const int nSocketType, const int nProtocolType, const in
 {
 	// Note: overwrites _hSocket without closing a previous handle
 	_hSocket = ::socket(nAddressFormat, nSocketType, nProtocolType);
+	// INVALID_SOCKET means the OS refused to create the socket (e.g. descriptor limit reached)
 	if (_hSocket == INVALID_SOCKET)
 		throw CSocketException(LastSocketError());
 }
@@ -529,6 +535,7 @@ void CSocketSTL::Accept(CSocketSTL& objConnectedSocket, SOCKADDR* pSockAddr, int
 		throw CSocketException(LastSocketError());
 #endif
 
+	// Report the real size of the peer address back to the caller
 	if (pLen != nullptr)
 		*pSockAddrLen = static_cast<int>(nLen);
 
@@ -736,6 +743,7 @@ void CSocketSTL::Listen(const int nConnectionBacklog) const
 	if (::listen(_hSocket, nBacklog) == SOCKET_ERROR)
 		throw CSocketException(LastSocketError());
 #else
+	// Same default as Windows; restart the call when interrupted by a signal
 	const int nBacklog{ nConnectionBacklog > 0 ? nConnectionBacklog : SOMAXCONN };
 	int nResult;
 	do
@@ -803,6 +811,7 @@ int CSocketSTL::Receive(void* pBuffer, const int nBufLen, const int nFlags) cons
 		);
 
 #if defined(_WIN32)
+	// recv() returns 0 when the peer closed the connection in an orderly way
 	const int nReceived{ ::recv(_hSocket, static_cast<char*>(pBuffer), nBufLen, nFlags) };
 	if (nReceived == SOCKET_ERROR)
 		throw CSocketException(LastSocketError());
@@ -848,7 +857,8 @@ int CSocketSTL::ReceiveFrom(void* pBuffer, const int nBufLen, SOCKADDR* pSockAdd
 	SOCKADDR* const pFrom{ pLen != nullptr ? pSockAddr : nullptr };
 
 #if defined(_WIN32)
-	const int nReceived{ ::recvfrom(_hSocket, static_cast<char*>(pBuf), nBufLen, nFlags, pFrom, pLen) };
+	// Winsock expects char* buffers
+	const int nReceived{ ::recvfrom(_hSocket, static_cast<char*>(pBuffer), nBufLen, nFlags, pFrom, pLen) };
 	if (nReceived == SOCKET_ERROR)
 		throw CSocketException(LastSocketError());
 #else
@@ -863,6 +873,7 @@ int CSocketSTL::ReceiveFrom(void* pBuffer, const int nBufLen, SOCKADDR* pSockAdd
 	const int nReceived{ static_cast<int>(nResult) };
 #endif
 
+	// Report the real size of the sender address back to the caller
 	if (pLen != nullptr)
 		*pSockAddrLen = static_cast<int>(nLen);
 	return nReceived;
@@ -906,6 +917,7 @@ int CSocketSTL::ReceiveFrom(void* pBuffer, const int nBufLen, String& strSocketA
 int CSocketSTL::Send(const void* pBuffer, const int nBufLen, int nFlags) const
 {
 #if defined(_WIN32)
+	// send() may transmit fewer bytes than requested; the caller must check the returned count
 	const int nSent{ ::send(_hSocket, static_cast<const char*>(pBuffer), nBufLen, nFlags) };
 	if (nSent == SOCKET_ERROR)
 		throw CSocketException(LastSocketError());
