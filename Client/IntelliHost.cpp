@@ -705,7 +705,7 @@ int main(const int nArgc, char* ppszArgv[])
 												{
 													nLength = sizeof(pBuffer);
 													ZeroMemory(pBuffer, sizeof(pBuffer));
-													if (ReadBuffer(objSocket, pBuffer, nLength, true, false))
+													if (ReadBuffer(objSocket, pBuffer, nLength, true, true))
 													{
 														// The server answers with the computed token
 														const std::string strTokenID = (char*) &pBuffer[3];

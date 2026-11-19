@@ -403,7 +403,7 @@ namespace {
 
         										// Send the token back to the client
         										nLength = static_cast<int>(strTokenID.length()) + 1;
-        										if (WriteBuffer(objSocket, (unsigned char*)strTokenID.c_str(), nLength, true, false))
+        										if (WriteBuffer(objSocket, (unsigned char*)strTokenID.c_str(), nLength, true, true))
         										{
         											std::cout << "TokenID: " << strTokenID << std::endl;
         										}
