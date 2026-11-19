@@ -30,7 +30,7 @@ A CLion project is included, with Debug and Release CMake profiles (`.idea/cmake
 
 ## Configuration
 
-Both programs read `IntelliHost.xml` from the **current working directory**. CMake copies the Client file next to `IntelliHostClient`; copy `Server/IntelliHost.xml` next to `IntelliHostServer` (or run it from `Server/`) and edit it.
+Both programs read `IntelliHost.xml` from the **current working directory**. CMake copies each file next to its binary (`IntelliHostClient` and `IntelliHostServer`) when the project is configured. Edit the copy in the build directory, or the source file and reconfigure.
 
 **Server** (`Server/IntelliHost.xml`): every element is required.
 

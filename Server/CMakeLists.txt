@@ -23,3 +23,9 @@ endif()
 target_compile_options(IntelliHostServer PRIVATE
         $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Wconversion>
 )
+
+configure_file(
+        IntelliHost.xml
+        IntelliHost.xml
+        COPYONLY
+)
