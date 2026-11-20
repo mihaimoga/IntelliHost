@@ -737,8 +737,20 @@ int main(const int nArgc, char* ppszArgv[])
 											}
 										}
 									}
+									else
+									{
+										objSocket.Close();
+										std::cerr << strOK1 << std::endl;
+										return EXIT_FAILURE;
+									}
 								}
 							}
+						}
+						else
+						{
+							objSocket.Close();
+							std::cerr << strOK << std::endl;
+							return EXIT_FAILURE;
 						}
 					}
 				}
