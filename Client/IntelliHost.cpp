@@ -662,7 +662,7 @@ int main(const int nArgc, char* ppszArgv[])
 		return EXIT_FAILURE;
 	}
 
-	// Token generation: hash "user : machine : UTC time" with SHA-256
+	// Token generation: send "user, machine, UTC time" to the server, which returns the token
 	if (nArgc == nMinArgCount && std::string_view(ppszArgv[1]) == "--generate-token")
 	{
 		const std::string& strUserID = GetUserID();

@@ -96,7 +96,11 @@ Token generation conversation:
 | 3 | user ID, machine ID, UTC date and time (three packets) | |
 | 4 | | `TokenID` |
 
-If the server does not recognise the protocol identifier or the command, it replies with an error message (`Error: Unknown protocol identifier` or `Error: Unknown command`) instead of `OK` and ends the conversation. The client prints that message to stderr and exits with a failure status. The server sends the token with a trailing `EOT`, which the client waits for to end the exchange. The token is the SHA-256 of `UserID : MachineID : DateTime`.
+If the server does not recognise the protocol identifier or the command, it replies with an error message (`Error: Unknown protocol identifier` or `Error: Unknown command`) instead of `OK` and ends the conversation. The client prints that message to stderr and exits with a failure status. The server sends the token with a trailing `EOT`, which the client waits for to end the exchange. The token is a fixed-length, 64-character lowercase hexadecimal string (256 bits): an HMAC-SHA256 over the length-prefixed `UserID`, `MachineID` and `DateTime`, keyed with 256 random bits from the operating system's random source. Because the key is random and fresh for every request, the token cannot be predicted or recomputed from its (guessable) inputs; it fits the `VARCHAR(64)` `token` column in `IntelliHost.sql`.
+
+### Diagnostics
+
+The server logs client connections and disconnections to stdout. Failures go to stderr, prefixed `Accept Error:` (a connection could not be accepted; the server keeps running), `Server Error:` (a socket failure; fatal when binding/listening, otherwise it ends only that client's session) or `Error: invalid ServerPort:` (bad port in `IntelliHost.xml`). The client reports connection problems as `Client Error:`.
 
 ## Database
 

@@ -13,6 +13,7 @@ or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 You should have received a copy of the GNU General Public License along with
 IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 
+#include <array>
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -21,6 +22,7 @@ IntelliHost. If not, see <http://www.opensource.org/licenses/gpl-3.0.html>*/
 #include <iostream>
 #include <string>
 #include <memory>
+#include <random>
 #include <string_view>
 #include <thread>
 #include <utility>
@@ -335,6 +337,69 @@ namespace {
 		return (ACK == nReturn);
 	}
 
+    /// @brief Computes HMAC-SHA256 (RFC 2104).
+    ///
+    /// @param arrKey The secret key; it must not be longer than the 64-byte SHA-256 block.
+    /// @param strMessage The data to authenticate.
+    /// @return The 32-byte authentication code.
+    std::array<uint8_t, 32> HmacSha256(const std::array<uint8_t, 32>& arrKey, const std::string& strMessage)
+    {
+        // The key is zero-padded to the block size, then XORed with the inner and outer pads
+        constexpr size_t nBlockSize = 64;
+        uint8_t arrInnerPad[nBlockSize];
+        uint8_t arrOuterPad[nBlockSize];
+        for (size_t nIndex = 0; nIndex < nBlockSize; nIndex++)
+        {
+            const uint8_t chKey = (nIndex < arrKey.size()) ? arrKey[nIndex] : static_cast<uint8_t>(0);
+            arrInnerPad[nIndex] = static_cast<uint8_t>(chKey ^ 0x36);
+            arrOuterPad[nIndex] = static_cast<uint8_t>(chKey ^ 0x5c);
+        }
+
+        // inner = H(innerPad || message)
+        SHA256 shaInner;
+        shaInner.update(arrInnerPad, nBlockSize);
+        shaInner.update(strMessage);
+        const std::array<uint8_t, 32> arrInner = shaInner.digest();
+
+        // result = H(outerPad || inner)
+        SHA256 shaOuter;
+        shaOuter.update(arrOuterPad, nBlockSize);
+        shaOuter.update(arrInner.data(), arrInner.size());
+        return shaOuter.digest();
+    }
+
+    /// @brief Generates the token for a client.
+    ///
+    /// The token is HMAC-SHA256 keyed with 256 random bits from the operating system's
+    /// random source, over the user, machine and date/time. The random key makes the
+    /// token impossible to predict from its (guessable) inputs, and the fields are
+    /// length-prefixed so that different field splits can never produce the same input.
+    ///
+    /// @param strUserID The user name sent by the client.
+    /// @param strMachineID The machine name sent by the client.
+    /// @param strDateTime The UTC date and time sent by the client.
+    /// @return A fixed-length token: 64 lowercase hexadecimal characters (256 bits).
+    std::string GenerateTokenID(const std::string& strUserID, const std::string& strMachineID, const std::string& strDateTime)
+    {
+        // Fresh random key for every token; std::random_device draws from the OS entropy source
+        std::random_device rdEntropy;
+        std::array<uint8_t, 32> arrKey;
+        for (size_t nIndex = 0; nIndex < arrKey.size(); nIndex += sizeof(uint32_t))
+        {
+            const uint32_t nRandom = rdEntropy();
+            for (size_t nByte = 0; nByte < sizeof(uint32_t); nByte++)
+            {
+                arrKey[nIndex + nByte] = static_cast<uint8_t>(nRandom >> (8 * nByte));
+            }
+        }
+
+        // Unambiguous encoding: "<length>:<value>" for every field
+        const std::string strMessage = std::to_string(strUserID.length()) + ":" + strUserID +
+            std::to_string(strMachineID.length()) + ":" + strMachineID +
+            std::to_string(strDateTime.length()) + ":" + strDateTime;
+        return SHA256::toString(HmacSha256(arrKey, strMessage));
+    }
+
     /// @brief Number of client connections currently being served.
     std::atomic<int> g_nActiveClients{0};
 
@@ -346,7 +411,7 @@ namespace {
     ///   1. client sends "IntelliHost" (protocol identifier), server replies "OK";
     ///   2. client sends the command "GenerateToken", server replies "OK";
     ///   3. client sends UserID, MachineID and DateTime;
-    ///   4. server replies with the SHA-256 TokenID of "UserID : MachineID : DateTime".
+    ///   4. server replies with a 64-character TokenID (see GenerateTokenID).
     /// The sequence stops silently at the first step that fails.
     ///
     /// @param pSocket The accepted connection; ownership is transferred to this function.
@@ -417,11 +482,8 @@ namespace {
         										const std::string strDateTime = reinterpret_cast<char *>(&pBuffer[3]);
         										std::cout << "DateTime: " << strDateTime << std::endl;
 
-        										// Same recipe as the client's local token: SHA-256 of "user : machine : UTC time"
-        										std::string strRawData = strUserID + (" : ") + strMachineID + (" : ") + strDateTime;
-        										SHA256 sha256;
-        										sha256.update(strRawData);
-        										const std::string& strTokenID = SHA256::toString(sha256.digest());
+        										// Strong 64-character token: HMAC-SHA256 with a random key over user, machine and time
+        										const std::string strTokenID = GenerateTokenID(strUserID, strMachineID, strDateTime);
 
         										// Send the token back to the client
         										nLength = static_cast<int>(strTokenID.length()) + 1;
