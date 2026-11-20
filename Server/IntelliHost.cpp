@@ -515,7 +515,7 @@ int main(const int /* nArgc */, char* /* ppszArgv */[])
             {
                 std::string strAcceptError;
                 ex.GetErrorMessage(strAcceptError);
-                std::cerr << "accept error: " << strAcceptError << std::endl;
+                std::cerr << "Accept Error: " << strAcceptError << std::endl;
                 continue;
             }
             std::thread(HandleClient, std::move(objSocket)).detach();
@@ -525,12 +525,12 @@ int main(const int /* nArgc */, char* /* ppszArgv */[])
     {
         std::string strSocketError;
         ex.GetErrorMessage(strSocketError);
-        std::cerr << "error: " << strSocketError << std::endl;
+        std::cerr << "Server Error: " << strSocketError << std::endl;
         return EXIT_FAILURE;
     }
     catch (const std::exception& ex)
     {
-        std::cerr << "error: invalid ServerPort: " << ex.what() << std::endl;
+        std::cerr << "Error: invalid ServerPort: " << ex.what() << std::endl;
         return EXIT_FAILURE;
     }
 }

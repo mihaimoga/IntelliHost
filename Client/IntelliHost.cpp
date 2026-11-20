@@ -695,8 +695,8 @@ int main(const int nArgc, char* ppszArgv[])
 					{
 						// The payload starts after the STX and 2-byte length header
 						// The server answers "OK" to a known protocol, otherwise an error message
-						const std::string strProtcolStatus = reinterpret_cast<char *>(&pBuffer[3]);
-						if (strProtcolStatus == "OK")
+						const std::string strProtocolStatus = reinterpret_cast<char *>(&pBuffer[3]);
+						if (strProtocolStatus == "OK")
 						{
 							std::cout << "Protocol acknowledged!" << std::endl;
 
@@ -753,7 +753,7 @@ int main(const int nArgc, char* ppszArgv[])
 						else
 						{
 							objSocket.Close();
-							std::cerr << strProtcolStatus << std::endl;
+							std::cerr << strProtocolStatus << std::endl;
 							return EXIT_FAILURE;
 						}
 					}
