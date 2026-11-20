@@ -96,7 +96,7 @@ Token generation conversation:
 | 3 | user ID, machine ID, UTC date and time (three packets) | |
 | 4 | | `TokenID` |
 
-The server sends the token with a trailing `EOT`, which the client waits for to end the exchange. The token is the SHA-256 of `UserID : MachineID : DateTime`.
+If the server does not recognise the protocol identifier or the command, it replies `ERROR` instead of `OK` and ends the conversation. The server sends the token with a trailing `EOT`, which the client waits for to end the exchange. The token is the SHA-256 of `UserID : MachineID : DateTime`.
 
 ## Database
 

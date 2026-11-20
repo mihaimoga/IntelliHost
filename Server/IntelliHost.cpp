@@ -435,8 +435,22 @@ namespace {
        								}
         						}
         					}
+        					// Unknown command: tell the client with an ERROR packet (best effort, result ignored)
+        					else
+        					{
+        						const std::string strERROR = "ERROR";
+        						nLength = static_cast<int>(strERROR.length()) + 1;
+        						WriteBuffer(objSocket, reinterpret_cast<const unsigned char *>(strERROR.c_str()), nLength, true, false);
+        					}
         				}
         			}
+        		}
+        		// Unknown protocol identifier: reject the client with an ERROR packet (best effort, result ignored)
+        		else
+        		{
+        			const std::string strERROR = "ERROR";
+        			nLength = static_cast<int>(strERROR.length()) + 1;
+        			WriteBuffer(objSocket, reinterpret_cast<const unsigned char *>(strERROR.c_str()), nLength, true, false);
         		}
         	}
         }
