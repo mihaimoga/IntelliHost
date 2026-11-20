@@ -694,23 +694,25 @@ int main(const int nArgc, char* ppszArgv[])
 					if (ReadBuffer(objSocket, pBuffer, nLength, true, false))
 					{
 						// The payload starts after the STX and 2-byte length header
-						const std::string strOK = reinterpret_cast<char *>(&pBuffer[3]);
-						if (strOK == "OK")
+						// The server answers "OK" to a known protocol, otherwise an error message
+						const std::string strProtcolStatus = reinterpret_cast<char *>(&pBuffer[3]);
+						if (strProtcolStatus == "OK")
 						{
 							std::cout << "Protocol acknowledged!" << std::endl;
 
 							// Ask the server to generate a token
 							const std::string strCommand = "GenerateToken";
 							nLength = static_cast<int>(strCommand.length()) + 1;
-							// Wait for the server to confirm it accepted the command
+							// Send the command, then read the server's verdict on it
 							if (WriteBuffer(objSocket, reinterpret_cast<const unsigned char *>(strCommand.c_str()), nLength, true, false))
 							{
 								nLength = sizeof(pBuffer);
 								ZeroMemory(pBuffer, sizeof(pBuffer));
 								if (ReadBuffer(objSocket, pBuffer, nLength, true, false))
 								{
-									const std::string strOK1 = reinterpret_cast<char *>(&pBuffer[3]);
-									if (strOK1 == "OK")
+									// "OK" means the command is accepted and the server expects the token components next
+									const std::string strCommandStatus = reinterpret_cast<char *>(&pBuffer[3]);
+									if (strCommandStatus == "OK")
 									{
 										std::cout << "Command sent!" << std::endl;
 
@@ -737,31 +739,34 @@ int main(const int nArgc, char* ppszArgv[])
 											}
 										}
 									}
+									// Anything but "OK" is the server's error text (e.g. unknown command): show it and fail
 									else
 									{
 										objSocket.Close();
-										std::cerr << strOK1 << std::endl;
+										std::cerr << strCommandStatus << std::endl;
 										return EXIT_FAILURE;
 									}
 								}
 							}
 						}
+						// The server rejected the protocol identifier: show its error text and fail
 						else
 						{
 							objSocket.Close();
-							std::cerr << strOK << std::endl;
+							std::cerr << strProtcolStatus << std::endl;
 							return EXIT_FAILURE;
 						}
 					}
 				}
+				// Normal end of the exchange (also reached when a step failed without raising an exception)
 				objSocket.Close();
 			}
 			// Socket failures (resolution, refused connection, ...) carry a system error message
 			catch (const CSocketException& ex)
 			{
-				// std::string strError;
+				// Reuse the strError declared earlier in main
 				ex.GetErrorMessage(strError);
-				std::cerr << "client error: " << strError << std::endl;
+				std::cerr << "Client Error: " << strError << std::endl;
 				return EXIT_FAILURE;
 			}
 			// std::stoul throws when the port is not numeric or out of range

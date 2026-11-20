@@ -458,7 +458,8 @@ namespace {
         {
             std::string strError;
             ex.GetErrorMessage(strError);
-            std::cerr << "server error: " << strError << std::endl;
+            // Any socket failure ends this client's session only; other client threads keep running
+            std::cerr << "Server Error: " << strError << std::endl;
         }
         // Close explicitly so the disconnect is logged only after the socket is released
         objSocket.Close();
