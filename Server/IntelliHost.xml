@@ -3,7 +3,7 @@
     <ServerPort>8080</ServerPort>
     <HostName>localhost</HostName>
     <HostPort>3306</HostPort>
-    <Database>MySQL_database</Database>
-    <Username>MySQL_username</Username>
-    <Password>MySQL_password</Password>
+    <Database>IntelliHost</Database>
+    <Username>phpmyadmin</Username>
+    <Password>MySQL</Password>
 </IntelliHost>
